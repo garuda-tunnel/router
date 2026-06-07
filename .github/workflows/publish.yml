@@ -1,0 +1,23 @@
+name: Publish ipt-server and powerdns images and chart
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish-ipt-server:
+    uses: garuda-tunnel/.github/.github/workflows/publish-component.yml@main
+    with:
+      image_name: ghcr.io/garuda-tunnel/garuda-ipt-server
+      image_context: kube/image/ipt-server
+      chart_path: kube/charts/ipt-server
+    secrets: inherit
+  publish-powerdns:
+    uses: garuda-tunnel/.github/.github/workflows/publish-component.yml@main
+    with:
+      image_name: ghcr.io/garuda-tunnel/garuda-powerdns
+      image_context: kube/image/powerdns
+    secrets: inherit
