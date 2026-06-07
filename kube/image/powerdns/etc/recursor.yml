@@ -1,0 +1,15 @@
+dnssec:
+  log_bogus: true
+incoming:
+  listen:
+    - 0.0.0.0:1053
+recursor:
+  extended_resolution_errors: true
+  lua_dns_script: /etc/powerdns/hook.lua
+
+recordcache:
+  max_negative_ttl: 300     # was 3600
+
+packetcache:
+  ttl: 60                    # general TTL for packet cache
+  negative_ttl: 30           # negative responses in packet cache

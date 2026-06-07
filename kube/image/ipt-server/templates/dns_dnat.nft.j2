@@ -1,0 +1,17 @@
+table inet dns_dnat_ipt_server {
+    chain prerouting {
+        type nat hook prerouting priority -100;
+        # Pinning bit (0x800): bypass the hijack so a pinned saddr's
+        # DNS keeps its original dst and is forwarded through the
+        # per-egress routing table.  Pinning marks (0xA00+i) all
+        # carry this bit; PBR (0x200) and DNS (0x201) marks do not.
+        meta mark and 0x800 != 0 return
+        ip daddr != 127.0.0.0/8 udp dport 53 dnat to {{ backend_ip }}:1053
+        ip daddr != 127.0.0.0/8 tcp dport 53 dnat to {{ backend_ip }}:1053
+    }
+    chain postrouting {
+        type nat hook postrouting priority 100;
+        ip daddr {{ backend_ip }} udp dport 1053 masquerade
+        ip daddr {{ backend_ip }} tcp dport 1053 masquerade
+    }
+}

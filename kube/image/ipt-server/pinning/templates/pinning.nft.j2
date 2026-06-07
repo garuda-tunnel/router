@@ -1,0 +1,69 @@
+{#
+  Pinning nft ruleset: classify backbone traffic by ip saddr and stamp
+  a per-egress fwmark in the 0xA00+i range (pin bit 0x800 set).
+  Static `ip rule fwmark X lookup TABLE` entries (installed by
+  KernelReconciler.install_static_rules) route the marked packets
+  into the per-egress table.
+
+  Pinning is meant to override geo-routing including DNS hijack.
+  dns_dnat_ipt_server short-circuits on `meta mark & 0x800 != 0 return`,
+  so a pinned saddr's DNS keeps its original dst and is forwarded by
+  the per-egress routing table.
+
+  ct mark is NOT stamped on classification rules.  The conntrack flush
+  (KernelReconciler.flush_conntrack) uses pyroute2.Conntrack to iterate
+  flows directly in Python, filtering by saddr and excluding the portal
+  TCP tuple.  The ct mark discriminator is therefore not needed and
+  would only add unused state to the kernel conntrack table.
+#}
+table ip pinning {
+    set private_subnets {
+        typeof ip daddr
+        flags interval
+        auto-merge
+        elements = { 10.0.0.0/8, 100.64.0.0/10,
+                     172.16.0.0/12, 192.168.0.0/16 }
+    }
+
+{% for e in egresses %}
+    set {{ e.set_name }} {
+        type ipv4_addr
+        flags timeout
+{% if e.elements %}
+        elements = { {{ e.elements | join(', ') }} }
+{% endif %}
+    }
+{% endfor %}
+
+    chain prerouting_nat {
+        type nat hook prerouting priority -150; policy accept;
+
+        # Intercept portal anchor traffic on the backbone interface and
+        # redirect it to the local pinning API listener.
+        # Must be in a nat chain: redirect is a NAT verdict and is
+        # rejected by the kernel in a filter chain.
+        iifname "backbone" ip daddr {{ portal_addr }} tcp dport {{ portal_port }} redirect to :{{ api_port }}
+    }
+
+    chain prerouting {
+        type filter hook prerouting priority -150; policy accept;
+
+        # Only classify traffic entering on the backbone interface.
+        iifname != "backbone" return
+
+        # Don't pin LAN / management / RFC1918 destinations.
+        ip daddr @private_subnets return
+
+        # Don't classify portal-bound traffic.  The nat chain above
+        # REDIRECTs portal flows to the local API listener; both
+        # chains share the prerouting hook.  The guard here ensures
+        # portal flows never receive a per-egress meta mark —
+        # keeping semantics aligned with the Python conntrack flush
+        # that also spares TCP flows to portal_addr:portal_port.
+        ip daddr {{ portal_addr }} tcp dport {{ portal_port }} return
+
+{% for e in egresses %}
+        ip saddr @{{ e.set_name }} meta mark set {{ "0x%x" % e.mark }}
+{% endfor %}
+    }
+}

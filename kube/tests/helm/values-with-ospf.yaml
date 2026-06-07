@@ -1,0 +1,28 @@
+namespace: garuda
+name: ipt-server
+images:
+  iptServer: ghcr.io/garuda-tunnel/garuda-ipt-server:latest
+  powerdns: ghcr.io/garuda-tunnel/garuda-powerdns:latest
+  frr: ghcr.io/garuda-tunnel/garuda-frr-sidecar:latest
+routes:
+  - route:
+      - gw: 192.0.2.130
+      - dev: border
+    rules:
+      - ".*"
+      - "0.0.0.0/0"
+pbrInterfaces:
+  - backbone
+nicAttach:
+  - backbone
+  - border
+cleanConntrack: false
+domainRouteTtl: 300
+pinningEgress: {}
+pinningTtl: 86400
+pinningApiPort: 80
+labels: {}
+ospf:
+  router_id: 198.51.100.99
+  interfaces:
+    - backbone

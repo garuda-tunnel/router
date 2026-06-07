@@ -1,0 +1,51 @@
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["."]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+include = [
+    "Config.py",
+    "Router.py",
+    "dns_records.py",
+    "lib.py",
+    "nexthop.py",
+    "route.py",
+    "route_config.py",
+    "route_health.py",
+    "ipdb/*.py",
+    "ipt_server/**/*.py",
+    "tasks/*.py",
+    "nftables/*.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.pylint.main]
+ignore-paths = ["^.*/tests/.*$"]
+
+[tool.pylint."messages control"]
+disable = [
+    # ipt-server is a high-churn operational daemon; docstrings on internal
+    # helpers add maintenance friction without proportional readability gain.
+    # Public API (Config, Router, route_health) is documented via type annotations.
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    # Data-holder classes (RouteEntry, DnsRecord, etc.) have no meaningful methods.
+    "too-few-public-methods",
+    # f-string logging is intentional for readability in hot paths.
+    "logging-fstring-interpolation",
+    # Exception handling follows fail-fast pattern with structured logging.
+    "broad-exception-caught",
+]

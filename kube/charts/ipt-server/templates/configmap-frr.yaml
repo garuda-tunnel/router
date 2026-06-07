@@ -1,0 +1,27 @@
+{{- if .Values.ospf }}
+{{- /*
+ipt-server transit provider must NOT redistribute kernel routes. In k3s
+the kernel default is the CNI bridge gateway (e.g. 10.42.0.1 dev eth0),
+which is irrelevant to OSPF transit advertisement. Including `redistribute
+kernel` causes ospfd to emit an untagged Type-5 LSA for 0.0.0.0/0 from the
+kernel-redistribution path, which shadows the tagged `default-information
+originate always ... route-map TRANSIT_ORIGINATE` emission and yields
+externalRouteTag=0 in the self-LSA. Consumers then cannot resolve the
+provider by tag. Edges (wg-de, wg-pt) already omit `redistribute kernel`
+and correctly emit tag=201 — this brings ipt-server into parity.
+
+The compose-era hub appeared to "work" with `redistribute kernel` only
+by environmental coincidence: there, the kernel default points at the
+border egress (172.29.0.1 dev border), the same prefix `default-information
+originate` advertises, so FRR consolidates the two emissions and the
+route-map's tag survives. In k3s the two prefixes diverge and the bug
+surfaces.
+*/}}
+{{- $ospfWithProvider := mergeOverwrite (deepCopy .Values.ospf) (dict "transit_provider" true "default_originate" true) }}
+{{- $cm := include "frr-sidecar.configmap" (dict
+      "name" .Values.name
+      "namespace" .Values.namespace
+      "ospf" $ospfWithProvider
+    ) -}}
+{{- if $cm }}{{ $cm }}{{- end }}
+{{- end }}

@@ -1,0 +1,19 @@
+namespace: garuda
+name: ipt-server
+images:
+  iptServer: ""
+  powerdns: ""
+  frr: ""
+routes: []
+pbrInterfaces:
+  - backbone
+nicAttach:
+  - backbone
+cleanConntrack: false
+domainRouteTtl: 300
+pinningEgress: {}
+pinningTtl: 86400
+pinningApiPort: 80
+labels: {}
+# ospf is null when omitted; FRR sidecar is then NOT rendered.
+ospf: null

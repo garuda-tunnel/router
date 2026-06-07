@@ -1,0 +1,12 @@
+services:
+  powerdns:
+    build:
+      context: .
+    volumes:
+      - ./:/etc/powerdns
+    environment:
+      IPT_WS: "192.168.88.227:8765"
+    ports:
+      - "1053:5301/udp"
+      - "1053:5301/tcp"
+    restart: unless-stopped

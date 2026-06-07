@@ -1,0 +1,31 @@
+table ip ipt_server_pbr {
+    set private_subnets {
+        typeof ip daddr
+        flags interval
+        auto-merge
+        elements = { 10.0.0.0/8, 100.64.0.0/10,
+                 172.16.0.0/12, 192.168.0.0/16 }
+    }
+
+ct timeout udp_marked_timeout {
+        protocol udp;
+        policy = { replied: {{(config.domain_route_ttl/2)|int}}s };
+    }
+    ct timeout tcp_marked_timeout {
+        protocol tcp;
+        policy = { established: {{config.domain_route_ttl|int}}s, syn_sent: {{(config.domain_route_ttl/2)|int}}s , syn_recv: {{(config.domain_route_ttl/4)|int}}s , established: {{config.domain_route_ttl|int}}s, fin_wait: {{(config.domain_route_ttl/2)|int}}s , close_wait: {{(config.domain_route_ttl/4)|int}}s , last_ack: {{(config.domain_route_ttl/8)|int}}s , close: {{(config.domain_route_ttl/10)|int}}s };
+    }
+
+    chain prerouting {
+        type filter hook prerouting priority -200; policy accept;
+        # DNS classification: intercepted DNS gets its own mark so the
+        # post-DNAT routing decision uses the main table, not table 200.
+        iifname { {% for iface in config.interfaces %}{% if not loop.first %}, {% endif %}"{{ iface }}"{% endfor %} } udp dport 53 counter meta mark set 0x{{ config.dns_mark|int|hex }};
+        iifname { {% for iface in config.interfaces %}{% if not loop.first %}, {% endif %}"{{ iface }}"{% endfor %} } tcp dport 53 counter meta mark set 0x{{ config.dns_mark|int|hex }};
+        # Geo-routing classification, guarded against reclassifying DNS.
+        iifname { {% for iface in config.interfaces %}{% if not loop.first %}, {% endif %}"{{ iface }}"{% endfor %} } ip daddr != @private_subnets meta mark 0x0 counter meta mark set 0x{{ config.pbr_mark|int|hex }};
+        meta mark 0x{{ config.pbr_mark|int|hex }} ip protocol udp counter ct timeout set "udp_marked_timeout";
+        meta mark 0x{{ config.pbr_mark|int|hex }} ip protocol  tcp counter ct timeout set "tcp_marked_timeout";
+        iifname { {% for iface in config.interfaces %}{% if not loop.first %}, {% endif %}"{{ iface }}"{% endfor %} } ip daddr != @private_subnets meta mark 0x0 counter ct mark set 0x{{ config.pbr_mark|int|hex }};
+    }
+}

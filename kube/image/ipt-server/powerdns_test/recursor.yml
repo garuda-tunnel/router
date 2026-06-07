@@ -1,0 +1,19 @@
+dnssec:
+  log_bogus: true
+  validation: off
+incoming:
+  listen:
+    - 0.0.0.0:5301
+recursor:
+  extended_resolution_errors: true
+  forward_zones_recurse:
+    - zone: .
+      forwarders:
+        - 1.1.1.1:53
+
+  lua_dns_script: /etc/powerdns/hook.lua
+logging:
+  loglevel: 7
+  trace: yes
+#packetcache:
+#  ttl: 10

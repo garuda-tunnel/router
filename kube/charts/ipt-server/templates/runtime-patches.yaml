@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-runtime-patches
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "iptServer.labels" . | nindent 4 }}
+data:
+  sitecustomize.py: |-
+{{ .Files.Get "files/sitecustomize.py" | indent 4 }}

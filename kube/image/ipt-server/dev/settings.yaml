@@ -1,0 +1,22 @@
+routes:
+  - route:
+      - {gw: "10.9.19.2"}
+      - {dev: "border"}
+    rules:
+      - ".*"
+      - "0.0.0.0/0"
+      - "1.0.0.0/8"
+      - "1.1.0.0/16"
+  - route:
+      - {dev: "border"}
+    rules:
+      - "AM"
+      - '.*\.ru'
+      - '.*\.am'
+interfaces:
+  - wg-firezone
+  - wg-firezone_1
+pbr_mark: 200
+dns_mark: 201
+table: 200
+domain_route_ttl: 100

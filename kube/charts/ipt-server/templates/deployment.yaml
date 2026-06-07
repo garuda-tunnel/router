@@ -1,0 +1,125 @@
+{{- /*
+ipt-server is the transit provider by definition. Provider invariants
+(transit_provider=true, default_originate=true) are hardcoded here rather
+than exposed through values, so the caller-supplied ospf object can stay
+narrow (router_id + interfaces).
+
+`redistribute=["kernel"]` is deliberately NOT set: in k3s the kernel
+default route is the CNI bridge gateway (irrelevant to OSPF transit) and
+`redistribute kernel` causes ospfd to shadow the tagged
+`default-information originate always ... route-map TRANSIT_ORIGINATE`
+emission with an untagged Type-5 from the kernel-redistribution path,
+which yields externalRouteTag=0 and breaks tag-based consumer discovery.
+See the matching rationale in templates/configmap-frr.yaml.
+*/ -}}
+{{- $ospfWithProvider := dict -}}
+{{- if .Values.ospf -}}
+{{- $ospfWithProvider = mergeOverwrite (deepCopy .Values.ospf) (dict "transit_provider" true "default_originate" true) -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name | quote }}
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "iptServer.labels" . | nindent 4 }}
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "iptServer.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "iptServer.labels" . | nindent 8 }}
+      annotations:
+        k8s.v1.cni.cncf.io/networks: {{ include "iptServer.networks" . | quote }}
+        garuda.runtime-patches/checksum: {{ .Values.runtimePatchChecksum | quote }}
+        garuda.env-config/checksum: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- if .Values.ospf }}
+        checksum/frr-config: {{ include "frr-sidecar.configmap" (dict "name" .Values.name "namespace" .Values.namespace "ospf" $ospfWithProvider) | sha256sum }}
+        {{- end }}
+    spec:
+      restartPolicy: Always
+      # Match the existing docker-compose stack's sysctls. ip_forward
+      # and rp_filter=2 are flagged "unsafe" by upstream kubelet and
+      # must be allow-listed at k3s install time. See
+      # examples/mini-site/infra/yc.tf module "k3s_init_hub".
+      securityContext:
+        sysctls:
+          - name: net.ipv4.ip_forward
+            value: "1"
+          - name: net.ipv4.conf.all.rp_filter
+            value: "2"
+      volumes:
+        - name: runtime-patches
+          configMap:
+            name: {{ .Values.name }}-runtime-patches
+        {{- if .Values.ospf }}
+        {{- include "frr-sidecar.volume" (dict
+              "name" .Values.name
+              "ospf" $ospfWithProvider
+            ) | nindent 8 }}
+        {{- end }}
+      {{- if .Values.ospf }}
+      {{- $initFrr := include "frr-sidecar.initContainer" (dict
+            "image" .Values.images.frr
+            "ospf"  $ospfWithProvider
+          ) -}}
+      {{- if $initFrr }}
+      initContainers:
+        {{- $initFrr | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: ipt-server
+          image: {{ .Values.images.iptServer | quote }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.name }}-env
+          ports:
+            - name: pinning-api
+              containerPort: {{ int .Values.pinningApiPort }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8888
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 10
+          volumeMounts:
+            - name: runtime-patches
+              mountPath: /runtime-patches
+              readOnly: true
+          env:
+            - name: PYTHONPATH
+              value: /runtime-patches
+            - name: IPT_DNS_BACKEND_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]
+        - name: powerdns
+          image: {{ .Values.images.powerdns | quote }}
+          imagePullPolicy: IfNotPresent
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - ss -H -ltn sport = :1053
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 10
+        {{- if .Values.ospf }}
+        {{- include "frr-sidecar.container" (dict
+              "image" .Values.images.frr
+              "ospf"  $ospfWithProvider
+            ) | nindent 8 }}
+        {{- end }}

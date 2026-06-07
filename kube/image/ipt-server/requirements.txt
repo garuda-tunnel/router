@@ -1,0 +1,15 @@
+websockets
+aiohttp>=3.9
+pyroute2>=0.9.5,<0.10
+pydantic
+pydantic-settings
+PyYaml
+jinja2
+expiring_lru_cache
+more_itertools
+duckdb==1.4.1
+duckdb-extensions
+jsonschema
+intervaltree
+click
+pycountry

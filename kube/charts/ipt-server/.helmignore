@@ -1,0 +1,6 @@
+# Terragrunt drops a `.terragrunt-source-manifest` file in every copied
+# subdirectory when the consumer Terragrunt unit pulls this module via
+# its `terraform { source = "..." }` block. Without this rule Helm
+# tries to parse those files as templates and aborts with
+# `YAML parse error … control characters are not allowed`.
+.terragrunt-source-manifest

@@ -1,0 +1,27 @@
+# ipt_server configuration example
+#
+# Rules are bare strings. Type is inferred:
+#   - CIDR (e.g. "10.0.0.0/8") or bare IPv4 ("8.8.8.8") -> network rule
+#   - ISO-3166-1 alpha-2 code ("AM", "am", "RU") -> country rule
+#   - Anything else -> domain regex (full-match)
+
+routes:
+  - route:
+      - {gw: "10.9.19.2"}
+      - {dev: "border"}
+    rules:
+      - ".*"
+      - "0.0.0.0/0"
+  - route:
+      - {dev: "border"}
+    rules:
+      - "AM"
+      - '.*\.am'
+
+interfaces:
+  - wg-firezone
+
+pbr_mark: 200
+dns_mark: 201
+table: 200
+domain_route_ttl: 100

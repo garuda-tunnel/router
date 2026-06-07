@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Egress selection</title>
+</head>
+<body>
+  <h1>Egress selection for {{ saddr }}</h1>
+  <p>Current: <strong>{{ current or "Auto" }}</strong>
+    {% if expires_in is not none %}(expires in {{ expires_in }} s){% endif %}
+  </p>
+  <ul>
+    <li><a href="/api/pin/clear?return=html">Auto</a></li>
+    {% for egress in egresses %}
+      <li><a href="/api/pin/set?egress={{ egress }}&amp;return=html">{{ egress }}</a></li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

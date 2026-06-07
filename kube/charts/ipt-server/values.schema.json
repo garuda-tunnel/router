@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "namespace",
+    "name",
+    "images",
+    "routes",
+    "pbrInterfaces",
+    "nicAttach",
+    "cleanConntrack",
+    "domainRouteTtl",
+    "pinningEgress",
+    "pinningTtl",
+    "pinningApiPort"
+  ],
+  "properties": {
+    "namespace":      { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+    "name":           { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iptServer", "powerdns"],
+      "properties": {
+        "iptServer": { "type": "string" },
+        "powerdns":  { "type": "string" },
+        "frr":       { "type": "string" }
+      }
+    },
+    "routes":         { "type": "array" },
+    "pbrInterfaces":  { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "nicAttach":      { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "cleanConntrack": { "type": "boolean" },
+    "domainRouteTtl": { "type": "integer", "minimum": 1 },
+    "pinningEgress":  { "type": "object" },
+    "pinningTtl":     { "type": "integer", "minimum": 1 },
+    "pinningApiPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "runtimePatchChecksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "frr-sidecar": { "type": "object" },
+    "ospf": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["router_id", "interfaces"],
+      "properties": {
+        "router_id":          { "type": "string" },
+        "interfaces":         { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    }
+  }
+}

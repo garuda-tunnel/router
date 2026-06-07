@@ -1,0 +1,19 @@
+#!
+#interface wg_home_inner2
+# description wireguard link srv1.de -> srv2.de
+## ip address 192.168.194.54/30
+## ip ospf message-digest-key 1 md5 0123456789abcdef
+## ip ospf message-digest-key 2 md5 fedcba9876543210
+## ip ospf network point-to-point
+# multicast
+#interface wg_home_outer2
+# multicast
+!
+router ospf
+# log file /tmp/ospfd.log
+default-information originate
+# ospf router-id
+ network 0.0.0.0/0 area 0.0.0.0
+ area 0.0.0.0 range 0.0.0.0/0
+ redistribute kernel
+!

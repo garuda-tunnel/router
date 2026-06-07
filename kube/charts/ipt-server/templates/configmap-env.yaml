@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-env
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "iptServer.labels" . | nindent 4 }}
+data:
+  # This ConfigMap is the source of truth for the ipt-server container's environment.
+  # None of these are sensitive values; they are routes, interface names, TTLs, and a port number.
+  IPT_INTERFACES_JSON: {{ .Values.pbrInterfaces | toJson | quote }}
+  IPT_ROUTES_JSON: {{ .Values.routes | toJson | quote }}
+  IPT_NIC_ATTACH: {{ .Values.nicAttach | toJson | quote }}
+  IPT_CLEAN_CONNTRACK: {{ .Values.cleanConntrack | quote }}
+  IPT_DOMAIN_ROUTE_TTL: {{ .Values.domainRouteTtl | quote }}
+  IPT_PINNING_EGRESS_JSON: {{ .Values.pinningEgress | toJson | quote }}
+  IPT_PINNING_TTL: {{ .Values.pinningTtl | quote }}
+  IPT_PINNING_API_PORT: {{ .Values.pinningApiPort | quote }}

@@ -1,0 +1,7 @@
+table inet border_ipt_server {
+    chain postrouting {
+        type nat hook postrouting priority 100;
+{% for net in private_bypass %}        ip daddr {{ net }} return
+{% endfor %}        oifname "border" masquerade
+    }
+}
