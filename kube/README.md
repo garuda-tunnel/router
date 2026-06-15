@@ -14,8 +14,8 @@ is preserved; only the runtime plane shifts to Kubernetes.
 |---|---|---|
 | `namespace` | yes | Existing namespace, typically `module.garuda_k8s_hub.namespace`. |
 | `name` | no | Deployment name. Default `ipt-server`. |
-| `ipt_server_image` | yes | Image reference for the `garuda_ipt` container. |
-| `powerdns_image` | yes | Image reference for the powerdns recursor container. |
+| `ipt_server_image` | no  | Image reference for the `garuda_ipt` container. Empty ⇒ use the chart's pinned digest. |
+| `powerdns_image`   | no  | Image reference for the powerdns recursor container. Empty ⇒ use the chart's pinned digest. |
 | `frr_image` | when `ospf != null` | Image reference for the `frr-sidecar` container. |
 | `routes` | no | Route configuration list (`IPT_ROUTES_JSON`). |
 | `pbr_interfaces` | no | Backbone-side PBR interfaces (`IPT_INTERFACES_JSON`). Default `["backbone"]`. |

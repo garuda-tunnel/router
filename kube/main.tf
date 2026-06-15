@@ -4,6 +4,11 @@ locals {
     filesha256("${path.module}/charts/ipt-server/templates/runtime-patches.yaml"),
     filesha256("${path.module}/charts/ipt-server/files/sitecustomize.py"),
   ]))
+  images_override = merge(
+    var.ipt_server_image == "" ? {} : { iptServer = var.ipt_server_image },
+    var.powerdns_image == "" ? {} : { powerdns = var.powerdns_image },
+    var.frr_image == "" ? {} : { frr = var.frr_image },
+  )
 }
 
 resource "helm_release" "ipt_server" {
@@ -17,11 +22,7 @@ resource "helm_release" "ipt_server" {
     yamlencode({
       namespace = var.namespace
       name      = var.name
-      images = {
-        iptServer = var.ipt_server_image
-        powerdns  = var.powerdns_image
-        frr       = var.frr_image
-      }
+      images = local.images_override
       routes         = var.routes
       pbrInterfaces  = var.pbr_interfaces
       nicAttach      = var.nic_attach

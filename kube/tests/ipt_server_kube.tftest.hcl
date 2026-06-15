@@ -154,3 +154,119 @@ run "reject_invalid_ospf_router_id" {
 
   expect_failures = [var.ospf]
 }
+
+run "empty_image_vars_omit_keys" {
+  command = plan
+
+  variables {
+    namespace        = "garuda"
+    name             = "ipt-server"
+    ipt_server_image = ""
+    powerdns_image   = ""
+    frr_image        = ""
+    routes = [
+      {
+        route = [{ gw = "192.0.2.130" }, { dev = "border" }]
+        rules = [".*", "0.0.0.0/0"]
+      }
+    ]
+    pbr_interfaces = ["backbone"]
+    ospf = {
+      router_id  = "198.51.100.99"
+      interfaces = ["backbone"]
+    }
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "garuda-ipt-server@sha256:")
+    error_message = "empty ipt_server_image must omit iptServer key so chart digest wins"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "garuda-powerdns@sha256:")
+    error_message = "empty powerdns_image must omit powerdns key so chart digest wins"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "\"frr\":")
+    error_message = "empty frr_image must omit frr key"
+  }
+}
+
+run "nonempty_image_vars_override" {
+  command = plan
+
+  variables {
+    namespace        = "garuda"
+    name             = "ipt-server"
+    ipt_server_image = "ghcr.io/garuda-tunnel/garuda-ipt-server@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    powerdns_image   = "ghcr.io/garuda-tunnel/garuda-powerdns@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    frr_image        = ""
+    routes = [
+      {
+        route = [{ gw = "192.0.2.130" }, { dev = "border" }]
+        rules = [".*", "0.0.0.0/0"]
+      }
+    ]
+    pbr_interfaces = ["backbone"]
+    ospf = {
+      router_id  = "198.51.100.99"
+      interfaces = ["backbone"]
+    }
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "garuda-ipt-server@sha256:1111111111111111111111111111111111111111111111111111111111111111")
+    error_message = "nonempty ipt_server_image must appear in rendered values"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "garuda-powerdns@sha256:2222222222222222222222222222222222222222222222222222222222222222")
+    error_message = "nonempty powerdns_image must appear in rendered values"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "\"frr\":")
+    error_message = "empty frr_image must omit frr key"
+  }
+}
+
+run "mixed_image_vars_partial_override" {
+  command = plan
+
+  variables {
+    namespace        = "garuda"
+    name             = "ipt-server"
+    ipt_server_image = "ghcr.io/garuda-tunnel/garuda-ipt-server@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    powerdns_image   = ""
+    frr_image        = ""
+    routes = [
+      {
+        route = [{ gw = "192.0.2.130" }, { dev = "border" }]
+        rules = [".*", "0.0.0.0/0"]
+      }
+    ]
+    pbr_interfaces = ["backbone"]
+    ospf = {
+      router_id  = "198.51.100.99"
+      interfaces = ["backbone"]
+    }
+  }
+
+  # Only iptServer is overridden; powerdns + frr are omitted so their chart-pinned
+  # defaults win. Proves partial-map merge() (the real CI single-key commit state).
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "garuda-ipt-server@sha256:3333333333333333333333333333333333333333333333333333333333333333")
+    error_message = "non-empty ipt_server_image must appear under images.iptServer"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "garuda-powerdns@sha256:")
+    error_message = "with empty powerdns_image, the powerdns digest override must be omitted"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "\"frr\":")
+    error_message = "with empty frr_image, the frr key must be omitted"
+  }
+}

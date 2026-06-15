@@ -15,13 +15,15 @@ variable "name" {
 }
 
 variable "ipt_server_image" {
-  description = "Image reference for the garuda_ipt container."
+  description = "Image reference for the garuda_ipt container. Empty ⇒ use the chart's pinned digest."
   type        = string
+  default     = ""
 }
 
 variable "powerdns_image" {
-  description = "Image reference for the powerdns recursor container."
+  description = "Image reference for the powerdns recursor container. Empty ⇒ use the chart's pinned digest."
   type        = string
+  default     = ""
 }
 
 variable "frr_image" {
