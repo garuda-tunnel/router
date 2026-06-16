@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/garuda-tunnel/router-internal/compare/v0.2.0...v0.3.0) (2026-06-16)
+
+
+### Features
+
+* **chart:** bump frr-sidecar dependency 0.1.0 -&gt; 0.2.0 ([3e82a63](https://github.com/garuda-tunnel/router-internal/commit/3e82a634aae12b370ae4c2375d3c59e5674cca18))
+* **chart:** bump frr-sidecar dependency 0.1.0 → 0.2.0 ([17f0473](https://github.com/garuda-tunnel/router-internal/commit/17f047392fa9ae5330555c27b26afd2745bda92b))
+
 ## [0.2.0](https://github.com/garuda-tunnel/router-internal/compare/v0.1.0...v0.2.0) (2026-06-16)
 
 
