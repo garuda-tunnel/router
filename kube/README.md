@@ -12,6 +12,7 @@ is preserved; only the runtime plane shifts to Kubernetes.
 
 | Variable | Required | Description |
 |---|---|---|
+| `chart_version` | no | Pinned OCI chart version (exact semver). Default `0.1.0`. |
 | `namespace` | yes | Existing namespace, typically `module.garuda_k8s_hub.namespace`. |
 | `name` | no | Deployment name. Default `ipt-server`. |
 | `ipt_server_image` | no  | Image reference for the `garuda_ipt` container. Empty ⇒ use the chart's pinned digest. |

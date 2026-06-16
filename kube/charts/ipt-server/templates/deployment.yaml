@@ -36,7 +36,7 @@ spec:
         {{- include "iptServer.labels" . | nindent 8 }}
       annotations:
         k8s.v1.cni.cncf.io/networks: {{ include "iptServer.networks" . | quote }}
-        garuda.runtime-patches/checksum: {{ .Values.runtimePatchChecksum | quote }}
+        garuda.runtime-patches/checksum: {{ include (print $.Template.BasePath "/runtime-patches.yaml") . | sha256sum }}
         garuda.env-config/checksum: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
         {{- if .Values.ospf }}
         checksum/frr-config: {{ include "frr-sidecar.configmap" (dict "name" .Values.name "namespace" .Values.namespace "ospf" $ospfWithProvider) | sha256sum }}

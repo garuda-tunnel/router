@@ -20,12 +20,20 @@ variables {
   }
 }
 
-run "chart_path_resolves_to_bundled_chart" {
+run "chart_resolves_from_oci" {
   command = plan
 
   assert {
-    condition     = endswith(helm_release.ipt_server.chart, "/charts/ipt-server")
-    error_message = "helm_release.ipt_server.chart must point at $${path.module}/charts/ipt-server"
+    condition     = helm_release.ipt_server.repository == "oci://ghcr.io/garuda-tunnel/charts"
+    error_message = "helm_release.repository must be the garuda OCI charts registry"
+  }
+  assert {
+    condition     = helm_release.ipt_server.chart == "ipt-server"
+    error_message = "helm_release.chart must be the OCI chart name 'ipt-server'"
+  }
+  assert {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", helm_release.ipt_server.version))
+    error_message = "helm_release.version must be an exact semver from var.chart_version"
   }
 }
 

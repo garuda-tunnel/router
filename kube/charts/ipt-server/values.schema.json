@@ -36,7 +36,6 @@
     "pinningEgress":  { "type": "object" },
     "pinningTtl":     { "type": "integer", "minimum": 1 },
     "pinningApiPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-    "runtimePatchChecksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "labels": {
       "type": "object",
       "additionalProperties": { "type": "string" }

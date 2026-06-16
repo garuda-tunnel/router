@@ -271,7 +271,7 @@ spec:
         garuda.managed-by: helm
       annotations:
         k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
-        garuda.runtime-patches/checksum: 
+        garuda.runtime-patches/checksum: 9f4df6186c8c1ffa7698f6b0b899bd3e053760ea1f24ae811328d7beacf14571
         garuda.env-config/checksum: b06382571741e28cbb103866ffb6e3fa501224897d2188bedb2416f077c1ded2
         checksum/frr-config: 0f2bbce6c55a68ef9db7c260c15f3d574e2c990a8e71c3aa848f9971a2ecb831
     spec:
