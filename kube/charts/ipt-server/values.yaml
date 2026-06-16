@@ -1,8 +1,8 @@
 namespace: garuda
 name: ipt-server
 images:
-  iptServer: "ghcr.io/garuda-tunnel/garuda-ipt-server@sha256:3fc1a5c8501571cd3380df616db40d8b1307c9af2e3475b106320bb091705b4c"
-  powerdns: "ghcr.io/garuda-tunnel/garuda-powerdns@sha256:b92e56901599c47aa6d7fe6de0fba4f8e82823b00b6aa2819d84498977caaca6"
+  iptServer: ""
+  powerdns: ""
   frr: ""
 routes: []
 pbrInterfaces:

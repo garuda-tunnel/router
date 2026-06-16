@@ -75,7 +75,7 @@ spec:
       {{- end }}
       containers:
         - name: ipt-server
-          image: {{ .Values.images.iptServer | quote }}
+          image: {{ .Values.images.iptServer | default (printf "ghcr.io/garuda-tunnel/garuda-ipt-server:%s" .Chart.Version) | quote }}
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
@@ -106,7 +106,7 @@ spec:
             capabilities:
               add: ["NET_ADMIN", "NET_RAW"]
         - name: powerdns
-          image: {{ .Values.images.powerdns | quote }}
+          image: {{ .Values.images.powerdns | default (printf "ghcr.io/garuda-tunnel/garuda-powerdns:%s" .Chart.Version) | quote }}
           imagePullPolicy: IfNotPresent
           readinessProbe:
             exec:

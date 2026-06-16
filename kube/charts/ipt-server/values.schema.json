@@ -21,7 +21,7 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["iptServer", "powerdns"],
+      "required": [],
       "properties": {
         "iptServer": { "type": "string" },
         "powerdns":  { "type": "string" },
