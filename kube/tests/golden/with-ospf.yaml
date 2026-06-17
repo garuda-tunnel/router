@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/name: ipt-server
     app.kubernetes.io/instance: "ipt-server"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 data:
   # This ConfigMap is the source of truth for the ipt-server container's environment.
@@ -65,6 +66,7 @@ metadata:
     app.kubernetes.io/name: ipt-server
     app.kubernetes.io/instance: "ipt-server"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 data:
   sitecustomize.py: |-
@@ -253,6 +255,7 @@ metadata:
     app.kubernetes.io/name: ipt-server
     app.kubernetes.io/instance: "ipt-server"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
   strategy:
@@ -268,11 +271,12 @@ spec:
         app.kubernetes.io/name: ipt-server
         app.kubernetes.io/instance: "ipt-server"
         app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
         k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
-        garuda.runtime-patches/checksum: 9f4df6186c8c1ffa7698f6b0b899bd3e053760ea1f24ae811328d7beacf14571
-        garuda.env-config/checksum: b06382571741e28cbb103866ffb6e3fa501224897d2188bedb2416f077c1ded2
+        garuda.runtime-patches/checksum: 78282f760c82668f528b0065b3a7edc260424c53ec159368ca7f325a35f84947
+        garuda.env-config/checksum: 821b02d40a987c70dc9f7c53e7c81496c28dd63716fac8cdc8453bcce072cdf3
         checksum/frr-config: 0f2bbce6c55a68ef9db7c260c15f3d574e2c990a8e71c3aa848f9971a2ecb831
     spec:
       restartPolicy: Always

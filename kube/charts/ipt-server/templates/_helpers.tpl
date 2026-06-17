@@ -2,6 +2,7 @@
 app.kubernetes.io/name: ipt-server
 app.kubernetes.io/instance: {{ .Values.name | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: garuda
 garuda.managed-by: helm
 {{- range $k, $v := .Values.labels }}
 {{ $k }}: {{ $v | quote }}
