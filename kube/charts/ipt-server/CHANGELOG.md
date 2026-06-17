@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/garuda-tunnel/router-internal/compare/v0.4.1...v0.4.2) (2026-06-17)
+
+
+### Bug Fixes
+
+* **ipt-server:** use 127.0.0.1 in hook.lua, remove hostAliases ([dd73fd1](https://github.com/garuda-tunnel/router-internal/commit/dd73fd1fd25497bea63e52d1c78b47a53f5419e9))
+
 ## [0.4.1](https://github.com/garuda-tunnel/router-internal/compare/v0.4.0...v0.4.1) (2026-06-17)
 
 
