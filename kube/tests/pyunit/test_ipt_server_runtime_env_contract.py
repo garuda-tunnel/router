@@ -588,8 +588,8 @@ class TestPdnsRuntimeConstants:
         """
         fn = _require(build_pdns_runtime_config, "build_pdns_runtime_config")
         cfg = fn({})
-        assert cfg.websocket_host == "garuda_ipt", (
-            "websocket_host must be hardcoded to 'garuda_ipt'"
+        assert cfg.websocket_host == "127.0.0.1", (
+            "websocket_host must be hardcoded to '127.0.0.1'"
         )
         assert cfg.websocket_port == 8765, "websocket_port must be hardcoded to 8765"
 

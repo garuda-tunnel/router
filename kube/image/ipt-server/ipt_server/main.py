@@ -154,11 +154,11 @@ def reconcile_dns_backend() -> None:
 
 
 class _PdnsRuntimeConfig:
-    websocket_host: str = "garuda_ipt"
+    websocket_host: str = "127.0.0.1"
     websocket_port: int = 8765
 
     def __init__(self):
-        self.websocket_host = "garuda_ipt"
+        self.websocket_host = "127.0.0.1"
         self.websocket_port = 8765
 
 

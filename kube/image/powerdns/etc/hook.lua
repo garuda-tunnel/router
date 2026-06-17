@@ -2,7 +2,7 @@
 -- or still drop
 local websocket = require "http.websocket"
 local cjson = require("cjson")
-local ws_uri = "ws://garuda_ipt:8765/"
+local ws_uri = "ws://127.0.0.1:8765/"
 local ws = websocket.new_from_uri(ws_uri)
 ws:connect()
 pdnslog("websocket uri" .. ws_uri, pdns.loglevels.Debug)

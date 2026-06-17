@@ -261,16 +261,9 @@ spec:
         - name: runtime-patches
           configMap:
             name: ipt-server-runtime-patches
-      # PowerDNS hook.lua connects to the ipt-server WebSocket backend by the
-      # legacy docker-compose service name "garuda_ipt" (ws://garuda_ipt:8765/).
-      # In k8s the containers share the pod netns, so map it to loopback.
-      # Without this the DNS-interception backend notification fails silently
-      # ("Failed to send message after reconnection") and DomainRule-based geo
-      # routing (e.g. .*\.ru -> RU border) never installs /32 routes in table 200.
-      hostAliases:
-        - ip: "127.0.0.1"
-          hostnames:
-            - "garuda_ipt"
+      # PowerDNS hook.lua connects to the ipt-server WebSocket backend at
+      # ws://127.0.0.1:8765/. Containers share the pod netns so loopback
+      # is the correct address. No hostAliases needed.
       containers:
         - name: ipt-server
           image: "ghcr.io/garuda-tunnel/garuda-ipt-server:latest"
