@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/garuda-tunnel/router-internal/compare/v0.4.0...v0.4.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* **ipt-server:** add hostAliases for garuda_ipt WebSocket backend ([d22f404](https://github.com/garuda-tunnel/router-internal/commit/d22f404b82554dbcc8c0bb08d600de9138955de3))
+* **ipt-server:** add hostAliases for garuda_ipt WebSocket backend (DNS interception) ([dedb9a2](https://github.com/garuda-tunnel/router-internal/commit/dedb9a250ddf240cb0691b4cfee54fcc81b2e0d4))
+
 ## [0.4.0](https://github.com/garuda-tunnel/router-internal/compare/v0.3.0...v0.4.0) (2026-06-17)
 
 
