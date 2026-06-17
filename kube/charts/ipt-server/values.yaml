@@ -15,5 +15,11 @@ pinningEgress: {}
 pinningTtl: 86400
 pinningApiPort: 80
 labels: {}
+# websocketHost is the hostname that PowerDNS hook.lua uses to connect to the
+# ipt-server WebSocket backend (ws://<websocketHost>:8765/). Containers share
+# the pod netns; the backend listens on 0.0.0.0:8765, so 127.0.0.1 is correct.
+# This value is mapped via hostAliases — do not change unless the baked-in
+# hook.lua literal changes (which requires an image rebuild).
+websocketHost: "garuda_ipt"
 # ospf is null when omitted; FRR sidecar is then NOT rendered.
 ospf: null

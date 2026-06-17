@@ -40,6 +40,7 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "websocketHost": { "type": "string", "minLength": 1 },
     "frr-sidecar": { "type": "object" },
     "ospf": {
       "type": ["object", "null"],
