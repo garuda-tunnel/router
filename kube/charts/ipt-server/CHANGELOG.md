@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/garuda-tunnel/router-internal/compare/v0.3.0...v0.4.0) (2026-06-17)
+
+
+### Features
+
+* **ipt-server:** emit app.kubernetes.io/part-of=garuda pod label ([2169f2b](https://github.com/garuda-tunnel/router-internal/commit/2169f2b25c28c546abcd2bb51904f85b83ea2a01))
+* **ipt-server:** emit app.kubernetes.io/part-of=garuda pod label ([255733a](https://github.com/garuda-tunnel/router-internal/commit/255733a8d491d837d4252c6f74b0ede07b978ead))
+
 ## [0.3.0](https://github.com/garuda-tunnel/router-internal/compare/v0.2.0...v0.3.0) (2026-06-16)
 
 
