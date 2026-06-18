@@ -34,6 +34,7 @@ resource "helm_release" "ipt_server" {
       pinningEgress  = var.pinning_egress
       pinningTtl     = var.pinning_ttl
       pinningApiPort = var.pinning_api_port
+      iptServer      = { mssClampValue = var.mss_clamp_value }
       labels         = var.labels
       ospf           = var.ospf
     })

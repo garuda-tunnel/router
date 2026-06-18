@@ -14,6 +14,12 @@ domainRouteTtl: 300
 pinningEgress: {}
 pinningTtl: 86400
 pinningApiPort: 80
+iptServer:
+  # Transit TCP MSS clamp on backbone (both iifname and oifname).
+  # Fixed MSS because ipt-server owns only the 1500 backbone iface; clamp-to-pmtu
+  # would be a no-op there.  Default 1240 = chain-B wg-firezone floor, >= QUIC 1200.
+  # Set to 0 to disable the ipt_server_mss table entirely.
+  mssClampValue: 1240
 labels: {}
 # ospf is null when omitted; FRR sidecar is then NOT rendered.
 ospf: null

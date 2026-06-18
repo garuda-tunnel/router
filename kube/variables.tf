@@ -108,6 +108,17 @@ variable "pinning_api_port" {
   default     = 80
 }
 
+variable "mss_clamp_value" {
+  description = "Fixed TCP MSS for the ipt_server_mss nftables clamp (IPT_MSS_CLAMP_VALUE). 0 disables the table."
+  type        = number
+  default     = 1240
+
+  validation {
+    condition     = var.mss_clamp_value >= 0 && var.mss_clamp_value <= 1460
+    error_message = "mss_clamp_value must be 0..1460."
+  }
+}
+
 variable "labels" {
   description = "Extra metadata labels merged into the pod and deployment labels."
   type        = map(string)

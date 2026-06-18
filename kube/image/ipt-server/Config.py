@@ -329,6 +329,12 @@ class MySettings(BaseSettings):
     )
     pinning_portal_anchor_addr: str = "1.1.1.1"
     pinning_portal_anchor_port: int = 1111
+    mss_clamp_value: int = Field(
+        default=1240,
+        validation_alias=AliasChoices("IPT_MSS_CLAMP_VALUE", "mss_clamp_value"),
+        ge=0,
+        le=1460,
+    )
 
     @staticmethod
     def _parse_json_env(value: Any, env_key: str, expected_type: type):

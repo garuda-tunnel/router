@@ -191,9 +191,40 @@ def apply_border_rules() -> None:
         raise RuntimeError(f"Failed to apply border rules: {error}")
 
 
+def render_mss_clamp_rules() -> str:
+    """Render the separate inet ipt_server_mss table for forward-direction MSS clamping.
+
+    Returns an empty string when mss_clamp_value is 0 (disabled).
+    ipt-server is the central forward-path transit for both chains; the return path
+    is asymmetric and bypasses ipt-server (Task 0 DQ2), so this clamps forward SYN
+    only. Fixed MSS because ipt-server owns only the 1500 backbone iface where
+    clamp-to-pmtu would be a no-op (spec §1.5).
+    """
+    if not state.CONFIG.mss_clamp_value:
+        return ""
+    template = _template_env().get_template("templates/mss.nft.j2")
+    return template.render(config=state.CONFIG)
+
+
+def apply_mss_clamp_rules() -> None:
+    """Apply (or skip) the MSS clamp table.  Idempotent: delete before re-add."""
+    nft = nftables.Nftables()
+    nft.cmd("delete table inet ipt_server_mss")
+    ruleset = render_mss_clamp_rules()
+    if not ruleset.strip():
+        return
+    rc, _output, error = nft.cmd(ruleset)
+    if rc != 0:
+        raise RuntimeError(f"Failed to apply MSS clamp rules: {error}")
+    logger.info(
+        "Applied MSS clamp table inet ipt_server_mss (value=%d)", state.CONFIG.mss_clamp_value
+    )
+
+
 def startup_apply_network_state() -> None:
     apply_pbr()
     apply_border_rules()
+    apply_mss_clamp_rules()
     reconcile_dns_backend()
 
 

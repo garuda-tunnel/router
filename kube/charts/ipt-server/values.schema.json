@@ -13,7 +13,8 @@
     "domainRouteTtl",
     "pinningEgress",
     "pinningTtl",
-    "pinningApiPort"
+    "pinningApiPort",
+    "iptServer"
   ],
   "properties": {
     "namespace":      { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
@@ -36,6 +37,14 @@
     "pinningEgress":  { "type": "object" },
     "pinningTtl":     { "type": "integer", "minimum": 1 },
     "pinningApiPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "iptServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mssClampValue"],
+      "properties": {
+        "mssClampValue": { "type": "integer", "minimum": 0, "maximum": 1460 }
+      }
+    },
     "labels": {
       "type": "object",
       "additionalProperties": { "type": "string" }

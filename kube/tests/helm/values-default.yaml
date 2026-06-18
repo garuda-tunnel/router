@@ -21,5 +21,7 @@ domainRouteTtl: 300
 pinningEgress: {}
 pinningTtl: 86400
 pinningApiPort: 80
+iptServer:
+  mssClampValue: 1240
 labels: {}
 ospf: null

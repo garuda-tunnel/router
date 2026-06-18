@@ -22,6 +22,7 @@ data:
   IPT_PINNING_EGRESS_JSON: "{}"
   IPT_PINNING_TTL: "86400"
   IPT_PINNING_API_PORT: "80"
+  IPT_MSS_CLAMP_VALUE: "1240"
 
 ---
 # Source: ipt-server/templates/configmap-frr.yaml
@@ -276,7 +277,7 @@ spec:
       annotations:
         k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
         garuda.runtime-patches/checksum: 78282f760c82668f528b0065b3a7edc260424c53ec159368ca7f325a35f84947
-        garuda.env-config/checksum: 821b02d40a987c70dc9f7c53e7c81496c28dd63716fac8cdc8453bcce072cdf3
+        garuda.env-config/checksum: 90c87f4df8edc15ed59d3cb02115357629a75026b7a5e3510717a4b471071bdf
         checksum/frr-config: 0f2bbce6c55a68ef9db7c260c15f3d574e2c990a8e71c3aa848f9971a2ecb831
     spec:
       restartPolicy: Always
