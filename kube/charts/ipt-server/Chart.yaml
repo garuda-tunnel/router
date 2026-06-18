@@ -2,7 +2,7 @@ apiVersion: v2
 name: ipt-server
 description: "Garuda ipt_server (garuda_ipt + powerdns) pod with optional FRR sidecar."
 type: application
-version: 0.4.2
+version: 0.5.0
 appVersion: "0.1.0"
 
 dependencies:

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/garuda-tunnel/router-internal/compare/v0.4.2...v0.5.0) (2026-06-18)
+
+
+### Features
+
+* **ipt-server:** central forward MSS clamp (MTU/MSS Task 4) ([7cff960](https://github.com/garuda-tunnel/router-internal/commit/7cff96044c7fb7db3cc0c2828a91535fb3523bca))
+* **ipt-server:** central forward MSS clamp (separate inet table) ([e607d94](https://github.com/garuda-tunnel/router-internal/commit/e607d945e0cbc89e7f38634820d15430245dfb6b))
+
+
+### Bug Fixes
+
+* **ipt-server:** align naming per spec (chain mss_clamp, iptServer.mssClampValue) ([5bfa0e3](https://github.com/garuda-tunnel/router-internal/commit/5bfa0e3bf62bf8b7072ecf62ec2777a541a61f4c))
+
 ## [0.4.2](https://github.com/garuda-tunnel/router-internal/compare/v0.4.1...v0.4.2) (2026-06-17)
 
 
