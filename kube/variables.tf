@@ -1,7 +1,7 @@
 variable "chart_version" {
   description = "Pinned OCI chart version (exact semver). Bumped in lockstep with Chart.yaml by release-please."
   type        = string
-  default     = "1.0.0" # x-release-please-version
+  default     = "1.1.0" # x-release-please-version
 
   validation {
     condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.chart_version))
