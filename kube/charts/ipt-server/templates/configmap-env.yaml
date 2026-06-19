@@ -16,4 +16,5 @@ data:
   IPT_PINNING_EGRESS_JSON: {{ .Values.pinningEgress | toJson | quote }}
   IPT_PINNING_TTL: {{ .Values.pinningTtl | quote }}
   IPT_PINNING_API_PORT: {{ .Values.pinningApiPort | quote }}
-  IPT_MSS_CLAMP_VALUE: {{ .Values.iptServer.mssClampValue | quote }}
+  IPT_FIXED_MSS: {{ .Values.mtuPolicy.fixedMss | quote }}
+  IPT_MSS_CLAMP_ENABLED: {{ .Values.mtuPolicy.mssClampEnabled | quote }}

@@ -194,13 +194,13 @@ def apply_border_rules() -> None:
 def render_mss_clamp_rules() -> str:
     """Render the separate inet ipt_server_mss table for forward-direction MSS clamping.
 
-    Returns an empty string when mss_clamp_value is 0 (disabled).
+    Returns an empty string when mss_clamp_enabled is False (disabled).
     ipt-server is the central forward-path transit for both chains; the return path
     is asymmetric and bypasses ipt-server (Task 0 DQ2), so this clamps forward SYN
     only. Fixed MSS because ipt-server owns only the 1500 backbone iface where
     clamp-to-pmtu would be a no-op (spec §1.5).
     """
-    if not state.CONFIG.mss_clamp_value:
+    if not state.CONFIG.mss_clamp_enabled:
         return ""
     template = _template_env().get_template("templates/mss.nft.j2")
     return template.render(config=state.CONFIG)
@@ -217,7 +217,7 @@ def apply_mss_clamp_rules() -> None:
     if rc != 0:
         raise RuntimeError(f"Failed to apply MSS clamp rules: {error}")
     logger.info(
-        "Applied MSS clamp table inet ipt_server_mss (value=%d)", state.CONFIG.mss_clamp_value
+        "Applied MSS clamp table inet ipt_server_mss (fixed_mss=%d)", state.CONFIG.fixed_mss
     )
 
 

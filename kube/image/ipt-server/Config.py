@@ -329,11 +329,15 @@ class MySettings(BaseSettings):
     )
     pinning_portal_anchor_addr: str = "1.1.1.1"
     pinning_portal_anchor_port: int = 1111
-    mss_clamp_value: int = Field(
+    fixed_mss: int = Field(
         default=1240,
-        validation_alias=AliasChoices("IPT_MSS_CLAMP_VALUE", "mss_clamp_value"),
-        ge=0,
+        validation_alias=AliasChoices("IPT_FIXED_MSS", "fixed_mss"),
+        ge=536,
         le=1460,
+    )
+    mss_clamp_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("IPT_MSS_CLAMP_ENABLED", "mss_clamp_enabled"),
     )
 
     @staticmethod
@@ -419,13 +423,13 @@ class MySettings(BaseSettings):
         """Return True when border interface is declared in nic_attach."""
         return "border" in self.nic_attach
 
-    @field_validator("clean_conntrack", mode="before")
-    def parse_clean_conntrack(cls, v: Any) -> bool:
+    @field_validator("clean_conntrack", "mss_clamp_enabled", mode="before")
+    def parse_bool_field(cls, v: Any) -> bool:
         if isinstance(v, bool):
             return v
         if isinstance(v, str):
             return _parse_bool(v)
-        raise ValueError("IPT_CLEAN_CONNTRACK must be a boolean or true/false string")
+        raise ValueError("expected a boolean or true/false string")
 
     @field_validator("routes", mode="before")
     def parse_routes(cls, v: Any, model_values: ValidationInfo) -> list:

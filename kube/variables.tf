@@ -1,7 +1,7 @@
 variable "chart_version" {
   description = "Pinned OCI chart version (exact semver). Bumped in lockstep with Chart.yaml by release-please."
   type        = string
-  default     = "0.5.0" # x-release-please-version
+  default     = "1.0.0" # x-release-please-version
 
   validation {
     condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.chart_version))
@@ -108,14 +108,56 @@ variable "pinning_api_port" {
   default     = 80
 }
 
-variable "mss_clamp_value" {
-  description = "Fixed TCP MSS for the ipt_server_mss nftables clamp (IPT_MSS_CLAMP_VALUE). 0 disables the table."
-  type        = number
-  default     = 1240
+variable "mtu_policy" {
+  description = "Site MTU/MSS policy. site_mtu derives effective_mtu and fixed_mss; otherwise effective_mtu and fixed_mss must be supplied explicitly."
+  nullable    = false
+
+  type = object({
+    site_mtu          = optional(number)
+    effective_mtu     = optional(number)
+    fixed_mss         = optional(number)
+    mss_clamp_enabled = optional(bool, true)
+  })
 
   validation {
-    condition     = var.mss_clamp_value >= 0 && var.mss_clamp_value <= 1460
-    error_message = "mss_clamp_value must be 0..1460."
+    condition = (
+      (var.mtu_policy.site_mtu != null && var.mtu_policy.effective_mtu == null && var.mtu_policy.fixed_mss == null) ||
+      (var.mtu_policy.site_mtu == null && var.mtu_policy.effective_mtu != null && var.mtu_policy.fixed_mss != null)
+    )
+    error_message = "Set either mtu_policy.site_mtu or both mtu_policy.effective_mtu and mtu_policy.fixed_mss."
+  }
+
+  validation {
+    condition = (
+      var.mtu_policy.site_mtu == null ||
+      (var.mtu_policy.site_mtu >= 1280 && var.mtu_policy.site_mtu <= 1420)
+    )
+    error_message = "mtu_policy.site_mtu must be between 1280 and 1420."
+  }
+
+  validation {
+    condition = (
+      var.mtu_policy.effective_mtu == null ||
+      (var.mtu_policy.effective_mtu >= 1280 && var.mtu_policy.effective_mtu <= 1420)
+    )
+    error_message = "mtu_policy.effective_mtu must be between 1280 and 1420."
+  }
+
+  validation {
+    condition = (
+      var.mtu_policy.fixed_mss == null ||
+      (var.mtu_policy.fixed_mss >= 536 && var.mtu_policy.fixed_mss <= 1460)
+    )
+    error_message = "mtu_policy.fixed_mss must be between 536 and 1460."
+  }
+
+  validation {
+    condition = (
+      var.mtu_policy.fixed_mss == null ||
+      var.mtu_policy.effective_mtu == null ||
+      var.mtu_policy.fixed_mss <= var.mtu_policy.effective_mtu - 40
+    )
+    error_message = "mtu_policy.fixed_mss must be less than or equal to mtu_policy.effective_mtu - 40."
   }
 }
 

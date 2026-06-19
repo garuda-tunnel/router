@@ -14,7 +14,7 @@
     "pinningEgress",
     "pinningTtl",
     "pinningApiPort",
-    "iptServer"
+    "mtuPolicy"
   ],
   "properties": {
     "namespace":      { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
@@ -37,12 +37,13 @@
     "pinningEgress":  { "type": "object" },
     "pinningTtl":     { "type": "integer", "minimum": 1 },
     "pinningApiPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-    "iptServer": {
+    "mtuPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mssClampValue"],
+      "required": ["fixedMss", "mssClampEnabled"],
       "properties": {
-        "mssClampValue": { "type": "integer", "minimum": 0, "maximum": 1460 }
+        "fixedMss":        { "type": "integer", "minimum": 536, "maximum": 1460 },
+        "mssClampEnabled": { "type": "boolean" }
       }
     },
     "labels": {

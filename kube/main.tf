@@ -1,4 +1,10 @@
 locals {
+  effective_mtu = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu : var.mtu_policy.effective_mtu
+  fixed_mss     = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu - 40 : var.mtu_policy.fixed_mss
+  # mss_clamp_enabled defaults to true via optional(bool, true) in the policy type.
+  # Task 5 wires it to IPT_MSS_CLAMP_ENABLED to gate the ipt_server_mss nft table install.
+  mss_clamp_enabled = var.mtu_policy.mss_clamp_enabled
+
   images_override = merge(
     var.ipt_server_image == "" ? {} : { iptServer = var.ipt_server_image },
     var.powerdns_image == "" ? {} : { powerdns = var.powerdns_image },
@@ -34,7 +40,10 @@ resource "helm_release" "ipt_server" {
       pinningEgress  = var.pinning_egress
       pinningTtl     = var.pinning_ttl
       pinningApiPort = var.pinning_api_port
-      iptServer      = { mssClampValue = var.mss_clamp_value }
+      mtuPolicy      = {
+        fixedMss        = local.fixed_mss
+        mssClampEnabled = local.mss_clamp_enabled
+      }
       labels         = var.labels
       ospf           = var.ospf
     })

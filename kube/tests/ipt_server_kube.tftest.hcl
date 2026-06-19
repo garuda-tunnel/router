@@ -18,6 +18,9 @@ variables {
     router_id  = "198.51.100.99"
     interfaces = ["backbone"]
   }
+  mtu_policy = {
+    site_mtu = 1330
+  }
 }
 
 run "chart_resolves_from_oci" {
@@ -183,6 +186,9 @@ run "empty_image_vars_omit_keys" {
       router_id  = "198.51.100.99"
       interfaces = ["backbone"]
     }
+    mtu_policy = {
+      site_mtu = 1330
+    }
   }
 
   assert {
@@ -221,6 +227,9 @@ run "nonempty_image_vars_override" {
       router_id  = "198.51.100.99"
       interfaces = ["backbone"]
     }
+    mtu_policy = {
+      site_mtu = 1330
+    }
   }
 
   assert {
@@ -237,6 +246,77 @@ run "nonempty_image_vars_override" {
     condition     = !strcontains(helm_release.ipt_server.values[0], "\"frr\":")
     error_message = "empty frr_image must omit frr key"
   }
+}
+
+run "mtu_policy_site_mtu_derives_values" {
+  command = plan
+
+  variables {
+    mtu_policy = {
+      site_mtu = 1330
+    }
+  }
+
+  assert {
+    condition     = local.effective_mtu == 1330
+    error_message = "site_mtu must derive effective_mtu 1330"
+  }
+
+  assert {
+    condition     = local.fixed_mss == 1290
+    error_message = "site_mtu 1330 must derive fixed_mss 1290"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "\"fixedMss\": 1290")
+    error_message = "site_mtu 1330 must render mtuPolicy.fixedMss: 1290 in helm values"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "\"mssClampEnabled\": true")
+    error_message = "default mss_clamp_enabled must render mtuPolicy.mssClampEnabled: true"
+  }
+}
+
+run "mtu_policy_explicit_override_honors_values" {
+  # explicit override: effective_mtu=1380, fixed_mss=1340 must pass through unchanged.
+  command = plan
+
+  variables {
+    mtu_policy = {
+      effective_mtu = 1380
+      fixed_mss     = 1340
+    }
+  }
+
+  assert {
+    condition     = local.effective_mtu == 1380
+    error_message = "explicit effective_mtu=1380 must be honored"
+  }
+
+  assert {
+    condition     = local.fixed_mss == 1340
+    error_message = "explicit fixed_mss=1340 must be honored"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "\"fixedMss\": 1340")
+    error_message = "explicit fixed_mss=1340 must render mtuPolicy.fixedMss: 1340 in helm values"
+  }
+}
+
+run "mtu_policy_reject_xor_violation" {
+  # Passing both site_mtu and effective_mtu violates the XOR constraint.
+  command = plan
+
+  variables {
+    mtu_policy = {
+      site_mtu      = 1330
+      effective_mtu = 1280
+    }
+  }
+
+  expect_failures = [var.mtu_policy]
 }
 
 run "mixed_image_vars_partial_override" {
@@ -258,6 +338,9 @@ run "mixed_image_vars_partial_override" {
     ospf = {
       router_id  = "198.51.100.99"
       interfaces = ["backbone"]
+    }
+    mtu_policy = {
+      site_mtu = 1330
     }
   }
 
