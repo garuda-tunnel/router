@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/garuda-tunnel/router-internal/compare/v1.1.0...v1.2.0) (2026-06-24)
+
+
+### Features
+
+* **ipt-server:** vanilla guest chart — podLabels/podAnnotations, drop frr-sidecar dep + networks helper + provider preamble ([f67e645](https://github.com/garuda-tunnel/router-internal/commit/f67e64564c95850b6573bd7895b9970b9e5671f6))
+* vanilla-guest passthrough + drop frr-sidecar (Phase 4+5) ([496c2fd](https://github.com/garuda-tunnel/router-internal/commit/496c2fdfed426396fe31bfe3ae448c3ee7da4cad))
+
 ## [1.1.0](https://github.com/garuda-tunnel/router-internal/compare/v1.0.0...v1.1.0) (2026-06-19)
 
 

@@ -1,6 +1,7 @@
 apiVersion: v2
 name: ipt-server
-description: "Garuda ipt_server (garuda_ipt + powerdns) vanilla guest pod. FRR sidecar injected by garuda MAP."
+description: "Garuda ipt_server (garuda_ipt + powerdns) vanilla guest pod. FRR
+  sidecar injected by garuda MAP."
 type: application
-version: 1.1.0
+version: 1.2.0
 appVersion: "0.1.0"
