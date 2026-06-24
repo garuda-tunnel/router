@@ -25,8 +25,7 @@
       "required": [],
       "properties": {
         "iptServer": { "type": "string" },
-        "powerdns":  { "type": "string" },
-        "frr":       { "type": "string" }
+        "powerdns":  { "type": "string" }
       }
     },
     "routes":         { "type": "array" },
@@ -50,7 +49,14 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
-    "frr-sidecar": { "type": "object" },
+    "podLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
     "ospf": {
       "type": ["object", "null"],
       "additionalProperties": false,

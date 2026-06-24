@@ -10,10 +10,8 @@ MODULE_DIR="${SCRIPT_DIR}/../.."
 CHART_DIR="${MODULE_DIR}/charts/ipt-server"
 GOLDEN_DIR="${SCRIPT_DIR}/../golden"
 
-# Resolve the frr-sidecar library dependency before templating. The
-# wireguard/firezone runners already do this; ipt-server was missing it
-# which caused `helm template` to fail with "no such file or directory"
-# on first run after a clean checkout.
+# Update chart dependencies (none currently; frr-sidecar removed in Phase 4+5).
+# Keep the call so adding a new dependency does not require script changes.
 helm dependency update "${CHART_DIR}"
 
 for scenario in default with-ospf; do

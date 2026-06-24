@@ -26,38 +26,6 @@ data:
   IPT_MSS_CLAMP_ENABLED: "true"
 
 ---
-# Source: ipt-server/templates/configmap-frr.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: "ipt-server-frr"
-  namespace: "garuda"
-data:
-  frr.conf: |
-    frr defaults traditional
-    log file /tmp/frr.log
-    zebra nexthop proto only
-    
-    route-map TRANSIT_ORIGINATE permit 10
-     set tag 201
-     set metric 100
-     set metric-type type-2
-    interface backbone
-     ip ospf area 0.0.0.0
-    ip ospf hello-interval 5
-     ip ospf dead-interval 15
-     ip ospf mtu-ignore
-    router ospf
-     ospf router-id 198.51.100.99
-    
-     default-information originate always metric 100 metric-type 2 route-map TRANSIT_ORIGINATE
-  daemons: |
-    zebra=yes
-    ospfd=yes
-  vtysh.conf: |
-    service integrated-vtysh-config
-
----
 # Source: ipt-server/templates/runtime-patches.yaml
 apiVersion: v1
 kind: ConfigMap
@@ -275,11 +243,12 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
+        net.garuda-tunnel/profile: transit-provider
       annotations:
-        k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
         garuda.runtime-patches/checksum: 78282f760c82668f528b0065b3a7edc260424c53ec159368ca7f325a35f84947
         garuda.env-config/checksum: 4201e1ff916d5e13744eadf86120ae48f2706c0f9a6ead84d3c8ebef3598bbf3
-        checksum/frr-config: 0f2bbce6c55a68ef9db7c260c15f3d574e2c990a8e71c3aa848f9971a2ecb831
+        k8s.v1.cni.cncf.io/networks: backbone@backbone
+        net.garuda-tunnel/router-id: 198.51.100.99
     spec:
       restartPolicy: Always
       # Match the existing docker-compose stack's sysctls. ip_forward
@@ -296,9 +265,6 @@ spec:
         - name: runtime-patches
           configMap:
             name: ipt-server-runtime-patches
-        - name: frr-source
-          configMap:
-            name: ipt-server-frr
       # PowerDNS hook.lua connects to the ipt-server WebSocket backend at
       # ws://127.0.0.1:8765/. Containers share the pod netns so loopback
       # is the correct address. No hostAliases needed.
@@ -346,13 +312,3 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 30
             timeoutSeconds: 10
-        - name: frr-sidecar
-          image: "ghcr.io/garuda-tunnel/garuda-frr-sidecar:latest"
-          imagePullPolicy: IfNotPresent
-          volumeMounts:
-            - name: frr-source
-              mountPath: /etc/frr-source
-              readOnly: true
-          securityContext:
-            capabilities:
-              add: ["NET_ADMIN", "NET_RAW", "SYS_ADMIN"]

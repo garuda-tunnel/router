@@ -8,8 +8,18 @@ locals {
   images_override = merge(
     var.ipt_server_image == "" ? {} : { iptServer = var.ipt_server_image },
     var.powerdns_image == "" ? {} : { powerdns = var.powerdns_image },
-    var.frr_image == "" ? {} : { frr = var.frr_image },
+    # frr key dropped: frr-sidecar is now MAP-injected (Decision #5 — var.frr_image kept inert below).
   )
+}
+
+resource "kubernetes_config_map" "garuda_extra" {
+  for_each = var.configmaps
+  metadata {
+    name      = each.key
+    namespace = var.namespace
+  }
+  # each.value is a { filename => content } map (Decision #11).
+  data = each.value
 }
 
 resource "helm_release" "ipt_server" {
@@ -44,8 +54,13 @@ resource "helm_release" "ipt_server" {
         fixedMss        = local.fixed_mss
         mssClampEnabled = local.mss_clamp_enabled
       }
+      # podLabels/podAnnotations: pass garuda_guest outputs to chart pod template (Decision #2).
+      podLabels      = var.labels
+      podAnnotations = var.annotations
       labels         = var.labels
       ospf           = var.ospf
     })
   ]
+
+  depends_on = [kubernetes_config_map.garuda_extra]
 }

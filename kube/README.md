@@ -1,8 +1,7 @@
 # ipt_server/kube
 
 Deploys the `garuda_ipt` + `garuda_pdns` stack as one multi-container
-Kubernetes Deployment, plus an optional FRR sidecar in the same pod
-network namespace.
+Kubernetes Deployment. FRR sidecar is injected by the garuda MAP at admission.
 
 This module replaces the docker-compose stack previously rendered by the
 ipt_server Ansible role. The container contract (env vars and capabilities)
@@ -17,7 +16,7 @@ is preserved; only the runtime plane shifts to Kubernetes.
 | `name` | no | Deployment name. Default `ipt-server`. |
 | `ipt_server_image` | no  | Image reference for the `garuda_ipt` container. Empty ⇒ use the chart's pinned digest. |
 | `powerdns_image`   | no  | Image reference for the powerdns recursor container. Empty ⇒ use the chart's pinned digest. |
-| `frr_image` | when `ospf != null` | Image reference for the `frr-sidecar` container. |
+| `frr_image` | no (deprecated) | DEPRECATED: frr-sidecar is now MAP-injected. Inert; kept to avoid breaking callers. |
 | `routes` | no | Route configuration list (`IPT_ROUTES_JSON`). |
 | `pbr_interfaces` | no | Backbone-side PBR interfaces (`IPT_INTERFACES_JSON`). Default `["backbone"]`. |
 | `nic_attach` | no | Multus secondary interfaces. Default `["backbone", "border"]`. |
@@ -26,8 +25,10 @@ is preserved; only the runtime plane shifts to Kubernetes.
 | `pinning_egress` | no | `IPT_PINNING_EGRESS_JSON`. Default `{}`. |
 | `pinning_ttl` | no | `IPT_PINNING_TTL`. Default `86400`. |
 | `pinning_api_port` | no | `IPT_PINNING_API_PORT`. Default `80`. |
-| `labels` | no | Extra metadata labels merged into pod/deployment labels. |
-| `ospf` | no | Structured OSPF intent. When `null`, no FRR sidecar is rendered. |
+| `labels` | no | Extra metadata labels merged into deployment labels. |
+| `annotations` | no | Pod-template annotations (e.g. from `garuda_guest.annotations`). |
+| `configmaps` | no | Extra ConfigMaps to create before pod admission (`map(map(string))`). From `garuda_guest.configmaps`. |
+| `ospf` | no | Structured OSPF intent. No-op since Phase 4+5 (frr-sidecar is MAP-injected). Kept for back-compat. |
 
 ### `ospf` object
 

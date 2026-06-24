@@ -3,7 +3,6 @@ name: ipt-server
 images:
   iptServer: ghcr.io/garuda-tunnel/garuda-ipt-server:latest
   powerdns: ghcr.io/garuda-tunnel/garuda-powerdns:latest
-  frr: ""
 routes:
   - route:
       - gw: 192.0.2.130

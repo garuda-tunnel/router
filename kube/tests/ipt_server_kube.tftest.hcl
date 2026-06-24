@@ -319,6 +319,23 @@ run "mtu_policy_reject_xor_violation" {
   expect_failures = [var.mtu_policy]
 }
 
+run "passthrough_annotations_labels_configmaps" {
+  command = plan
+  variables {
+    annotations = { "net.garuda-tunnel/router-id" = "10.130.30.1" }
+    labels      = { "net.garuda-tunnel/profile" = "transit-provider" }
+    configmaps  = { "ipt-frr-extra" = { "extra.conf" = "ip forwarding" } }
+  }
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "\"net.garuda-tunnel/router-id\": \"10.130.30.1\"")
+    error_message = "podAnnotations must carry the injected router-id value"
+  }
+  assert {
+    condition     = length(kubernetes_config_map.garuda_extra) == 1 && contains(keys(kubernetes_config_map.garuda_extra), "ipt-frr-extra")
+    error_message = "one ConfigMap must be planned per configmaps entry, keyed by CM name"
+  }
+}
+
 run "mixed_image_vars_partial_override" {
   command = plan
 

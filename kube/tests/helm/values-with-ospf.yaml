@@ -3,7 +3,6 @@ name: ipt-server
 images:
   iptServer: ghcr.io/garuda-tunnel/garuda-ipt-server:latest
   powerdns: ghcr.io/garuda-tunnel/garuda-powerdns:latest
-  frr: ghcr.io/garuda-tunnel/garuda-frr-sidecar:latest
 routes:
   - route:
       - gw: 192.0.2.130
@@ -25,7 +24,9 @@ mtuPolicy:
   fixedMss: 1240
   mssClampEnabled: true
 labels: {}
-ospf:
-  router_id: 198.51.100.99
-  interfaces:
-    - backbone
+podLabels:
+  net.garuda-tunnel/profile: transit-provider
+podAnnotations:
+  net.garuda-tunnel/router-id: 198.51.100.99
+  k8s.v1.cni.cncf.io/networks: backbone@backbone
+ospf: null

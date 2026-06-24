@@ -3,7 +3,6 @@ name: ipt-server
 images:
   iptServer: ""
   powerdns: ""
-  frr: ""
 routes: []
 pbrInterfaces:
   - backbone
@@ -22,5 +21,7 @@ mtuPolicy:
   # Set to false to skip ipt_server_mss nftables table installation entirely.
   mssClampEnabled: true
 labels: {}
-# ospf is null when omitted; FRR sidecar is then NOT rendered.
+podLabels: {}
+podAnnotations: {}
+# ospf: kept for back-compat (callers may still pass it; no-op now that frr-sidecar is MAP-injected).
 ospf: null

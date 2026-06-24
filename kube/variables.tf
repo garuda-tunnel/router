@@ -38,7 +38,9 @@ variable "powerdns_image" {
 }
 
 variable "frr_image" {
-  description = "Image reference for the frr-sidecar container. Required when ospf != null; ignored otherwise."
+  # DEPRECATED (Decision #5 — Phase 4+5): frr-sidecar is now MAP-injected; this variable is inert.
+  # Callers may keep passing it without breaking anything. Will be removed in a future cleanup phase.
+  description = "DEPRECATED: frr-sidecar image override. No-op since Phase 4+5 — MAP-injected. Kept to avoid caller-breaking variable removal."
   type        = string
   default     = ""
 }
@@ -164,6 +166,18 @@ variable "mtu_policy" {
 variable "labels" {
   description = "Extra metadata labels merged into the pod and deployment labels."
   type        = map(string)
+  default     = {}
+}
+
+variable "annotations" {
+  description = "Pod-template annotations. From garuda_guest.annotations."
+  type        = map(string)
+  default     = {}
+}
+
+variable "configmaps" {
+  description = "Extra ConfigMaps to create before pod admission. From garuda_guest.configmaps."
+  type        = map(map(string))
   default     = {}
 }
 
