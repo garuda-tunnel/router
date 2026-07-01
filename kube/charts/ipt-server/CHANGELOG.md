@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/garuda-tunnel/router-internal/compare/v1.2.1...v1.2.2) (2026-07-01)
+
+
+### Bug Fixes
+
+* **ipt-server:** bump appVersion for background-task retention fix ([#27](https://github.com/garuda-tunnel/router-internal/issues/27)) ([bbb53d5](https://github.com/garuda-tunnel/router-internal/commit/bbb53d5121a834018ecfdc75f4c76cca59d20b01))
+
 ## [1.2.1](https://github.com/garuda-tunnel/router-internal/compare/v1.2.0...v1.2.1) (2026-07-01)
 
 
