@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/garuda-tunnel/router-internal/compare/v1.2.0...v1.2.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **ipt-server:** bump appVersion for egress-nexthop resolution fix ([b64ea2b](https://github.com/garuda-tunnel/router-internal/commit/b64ea2ba1608d89f7e2cb37b4d786fdacd3181e9))
+* **ipt-server:** bump appVersion for egress-nexthop resolution fix ([a1cdbb5](https://github.com/garuda-tunnel/router-internal/commit/a1cdbb529fbcbc8cb79f5a45916d3854c16f9325))
+
 ## [1.2.0](https://github.com/garuda-tunnel/router-internal/compare/v1.1.0...v1.2.0) (2026-06-24)
 
 
