@@ -909,3 +909,97 @@ def test_probe_logs_branch_on_unknown_gw(caplog):
     assert alive is False
     assert any("no owning router" in r.message.lower() or "192.0.2.99" in r.message
                for r in caplog.records), "expected a diagnostic line for the False branch"
+
+
+@pytest.mark.asyncio
+async def test_monitor_nexthops_loop_survives_a_tick_that_raises():
+    """Regression for the vpn2 blackhole: one exploding tick must NOT kill the
+    monitor loop. The loop must call the tick again on the next iteration.
+
+    Mirrors the live failure mode where nexthop_monitor stopped ticking after
+    its first tick and never recovered de/pt from blackhole.
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    from ipt_server import state
+    from tasks.nexthop_monitor import monitor_nexthops
+
+    calls = {"n": 0}
+    stop = asyncio.Event()
+
+    def fake_tick(*_args, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("boom on tick 1 (e.g. a NetlinkError on replace)")
+        if calls["n"] >= 3:
+            stop.set()
+
+    loaded = asyncio.Event()
+    loaded.set()
+    fake_router = SimpleNamespace(_routes_loaded=loaded)
+
+    with (
+        patch.object(state, "ROUTER", fake_router),
+        patch("tasks.nexthop_monitor._tick", side_effect=fake_tick),
+        patch("tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
+    ):
+        await asyncio.wait_for(
+            monitor_nexthops({}, {}, stop),
+            timeout=2,
+        )
+
+    assert calls["n"] >= 3, (
+        "monitor_nexthops loop died after the first tick raised; it must "
+        "keep ticking (this is the exact live regression)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_monitor_nexthops_loop_survives_a_hanging_tick():
+    """A tick whose worker-thread body HANGS must not wedge the loop forever.
+
+    This is the mechanism the old `try/except Exception` could NOT defend
+    against (a hung to_thread(_tick) suspends the coroutine indefinitely with
+    no exception) and is the leading hypothesis for the live vpn2 stall. The
+    per-tick timeout in run_periodic bounds it so the loop keeps ticking.
+    """
+    import asyncio
+    import time
+    from types import SimpleNamespace
+
+    from ipt_server import state
+    from tasks.nexthop_monitor import monitor_nexthops
+
+    calls = {"n": 0}
+    stop = asyncio.Event()
+
+    def fake_tick(*_args, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # Block the worker thread well past the per-tick timeout (0.05s)
+            # but bounded so the worker frees promptly and does not linger
+            # past the test.
+            time.sleep(0.4)
+        if calls["n"] >= 3:
+            stop.set()
+
+    loaded = asyncio.Event()
+    loaded.set()
+    fake_router = SimpleNamespace(_routes_loaded=loaded)
+
+    with (
+        patch.object(state, "ROUTER", fake_router),
+        patch("tasks.nexthop_monitor._tick", side_effect=fake_tick),
+        patch("tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
+        patch("tasks.nexthop_monitor._TICK_TIMEOUT_SECONDS", 0.05),
+    ):
+        await asyncio.wait_for(
+            monitor_nexthops({}, {}, stop),
+            timeout=2,
+        )
+
+    assert calls["n"] >= 3, (
+        "monitor_nexthops loop did not recover from a hanging tick; the "
+        "per-tick timeout must abandon it and keep ticking"
+    )

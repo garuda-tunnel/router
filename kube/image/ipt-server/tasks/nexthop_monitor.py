@@ -16,6 +16,7 @@ from typing import Optional
 from ipt_server import state
 import nexthop
 from Config import NhgDescriptor
+from tasks.periodic import run_periodic
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,11 @@ _TICK_INTERVAL_SECONDS = 5
 _GW_FAILURE_THRESHOLD = 3  # consecutive failures before treating gw as dead
 _VTY_BRIDGE_URL = "http://127.0.0.1:7890/vtysh"
 _VTY_BRIDGE_TIMEOUT = 5
+# Hard wall-clock deadline for one _tick (a full probe sweep across all
+# members, each doing up to 4 vty-bridge HTTP calls at _VTY_BRIDGE_TIMEOUT).
+# Bounds a hung to_thread(_tick) so it can never wedge the loop (see
+# tasks/periodic.py). Generous headroom over the worst-case probe latency.
+_TICK_TIMEOUT_SECONDS = 60
 
 # The OSPF backbone transit subnet. The directly-attached fallback in
 # _resolve_direct_router_nexthop may only return an address on this subnet as a
@@ -489,18 +495,17 @@ async def monitor_nexthops(
         member_nhids: (gw, dev) tuple -> member_nhid mapping from Router.
         stop_event: signal to stop the monitor loop.
     """
-    logger.info("Starting nexthop monitor")
-
     member_alive: dict[tuple, bool] = {}
     active_member: dict[NhgDescriptor, tuple] = {}
     consecutive_failures: dict[str, int] = {}
-    first_tick = True
+    # `first_tick` must survive across ticks; a list cell keeps it mutable
+    # inside the tick closure without a `nonlocal` on a reassigned name.
+    first_tick = [True]
 
-    while not stop_event.is_set():
+    async def _do_tick() -> None:
         if not state.ROUTER or not state.ROUTER._routes_loaded.is_set():
-            await asyncio.sleep(_TICK_INTERVAL_SECONDS)
-            continue
-
+            # Routes not yet loaded: skip this tick (loop keeps ticking).
+            return
         try:
             await asyncio.to_thread(
                 _tick,
@@ -509,14 +514,19 @@ async def monitor_nexthops(
                 member_alive,
                 active_member,
                 consecutive_failures,
-                first_tick,
+                first_tick[0],
             )
-        except Exception as exc:
-            logger.error("nexthop_monitor tick failed: %s", exc)
         finally:
-            if first_tick:
-                first_tick = False
+            # Advance out of first_tick only once we have actually run a tick
+            # against loaded routes, so a real (non-seeding) reconcile fires
+            # on the next iteration.
+            first_tick[0] = False
 
-        await asyncio.sleep(_TICK_INTERVAL_SECONDS)
-
-    logger.info("Nexthop monitor stopped")
+    await run_periodic(
+        "nexthop monitor",
+        _do_tick,
+        interval=_TICK_INTERVAL_SECONDS,
+        stop_event=stop_event,
+        tick_timeout=_TICK_TIMEOUT_SECONDS,
+        logger=logger,
+    )

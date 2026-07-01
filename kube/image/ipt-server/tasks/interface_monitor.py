@@ -12,9 +12,15 @@ from typing import Dict, Set, Tuple
 from pyroute2 import IPRoute
 
 from ipt_server import state
+from tasks.periodic import run_periodic
 
 
 logger = logging.getLogger(__name__)
+
+_INTERVAL_SECONDS = 5
+# Bounds a hung pyroute2 get_links / PBR-reapply / route-replay tick so it can
+# never wedge the loop (see tasks/periodic.py).
+_TICK_TIMEOUT_SECONDS = 60
 
 
 def _collect_link_state() -> Tuple[Dict[str, int], Dict[str, str]]:
@@ -84,9 +90,6 @@ async def monitor_interfaces(stop_event):
     """Monitor interface state changes and reconcile PBR/routes."""
     from ipt_server.main import apply_pbr
 
-    logger.info("Starting interface monitor")
-    last_state: Dict[str, str] = {}
-
     route_interfaces: Set[str] = _dev_interfaces_from_routes(state.CONFIG.routes)
     all_monitored: Set[str] = set(state.CONFIG.interfaces) | route_interfaces
     logger.info(
@@ -94,74 +97,82 @@ async def monitor_interfaces(stop_event):
         f"route interfaces: {sorted(route_interfaces)}"
     )
 
-    while not stop_event.is_set():
-        try:
-            # pyroute2 0.9.x sync API internally calls
-            # ``event_loop.run_until_complete`` and raises
-            # ``RuntimeError: This event loop is already running`` if
-            # invoked from the main asyncio loop.  Run the netlink poll
-            # in a worker thread so it executes on a fresh event loop.
-            current_state = await asyncio.to_thread(_poll_links_once)
+    # last_state must persist across ticks; a dict cell keeps it mutable inside
+    # the tick closure.
+    last_state: Dict[str, str] = {}
 
-            need_pbr_reapply = False
-            need_route_replay = False
+    async def replay_healthy_routes():
+        unhealthy = {
+            iface for iface, ok in state.INTERFACE_HEALTH.items() if not ok
+        }
+        if unhealthy:
+            logger.info(
+                f"Skipping route replay for unhealthy gated "
+                f"interfaces: {unhealthy}"
+            )
+            for iface in route_interfaces - unhealthy:
+                await asyncio.to_thread(
+                    state.ROUTER.replay_routes_for_interface, iface
+                )
+        else:
+            await asyncio.to_thread(state.ROUTER.replay_routes)
 
-            for iface in all_monitored:
-                if iface in current_state and iface not in last_state:
-                    logger.info(f"Interface {iface} appeared")
+    async def _tick() -> None:
+        nonlocal last_state
+        # pyroute2 0.9.x sync API internally calls
+        # ``event_loop.run_until_complete`` and raises
+        # ``RuntimeError: This event loop is already running`` if
+        # invoked from the main asyncio loop.  Run the netlink poll
+        # in a worker thread so it executes on a fresh event loop.
+        current_state = await asyncio.to_thread(_poll_links_once)
+
+        need_pbr_reapply = False
+        need_route_replay = False
+
+        for iface in all_monitored:
+            if iface in current_state and iface not in last_state:
+                logger.info(f"Interface {iface} appeared")
+                if iface in state.CONFIG.interfaces:
+                    need_pbr_reapply = True
+                else:
+                    need_route_replay = True
+            elif iface not in current_state and iface in last_state:
+                logger.info(f"Interface {iface} disappeared")
+
+            if iface in current_state and iface in last_state:
+                if current_state[iface] != last_state[iface]:
+                    logger.info(
+                        f"Interface {iface} state changed: "
+                        f"{last_state[iface]} -> {current_state[iface]}"
+                    )
                     if iface in state.CONFIG.interfaces:
                         need_pbr_reapply = True
                     else:
                         need_route_replay = True
-                elif iface not in current_state and iface in last_state:
-                    logger.info(f"Interface {iface} disappeared")
 
-                if iface in current_state and iface in last_state:
-                    if current_state[iface] != last_state[iface]:
-                        logger.info(
-                            f"Interface {iface} state changed: "
-                            f"{last_state[iface]} -> {current_state[iface]}"
-                        )
-                        if iface in state.CONFIG.interfaces:
-                            need_pbr_reapply = True
-                        else:
-                            need_route_replay = True
+        if need_pbr_reapply:
+            logger.info("PBR interface changed, reapplying PBR rules...")
+            try:
+                await asyncio.to_thread(apply_pbr)
+                if state.ROUTER:
+                    await replay_healthy_routes()
+            except Exception as e:
+                logger.error(f"Failed to re-apply PBR: {e}")
+        elif need_route_replay:
+            logger.info("Route interface changed, replaying routes...")
+            try:
+                if state.ROUTER:
+                    await replay_healthy_routes()
+            except Exception as e:
+                logger.error(f"Failed to replay routes: {e}")
 
-            async def replay_healthy_routes():
-                unhealthy = {
-                    iface for iface, ok in state.INTERFACE_HEALTH.items() if not ok
-                }
-                if unhealthy:
-                    logger.info(
-                        f"Skipping route replay for unhealthy gated "
-                        f"interfaces: {unhealthy}"
-                    )
-                    for iface in route_interfaces - unhealthy:
-                        await asyncio.to_thread(
-                            state.ROUTER.replay_routes_for_interface, iface
-                        )
-                else:
-                    await asyncio.to_thread(state.ROUTER.replay_routes)
+        last_state = {k: v for k, v in current_state.items() if k in all_monitored}
 
-            if need_pbr_reapply:
-                logger.info("PBR interface changed, reapplying PBR rules...")
-                try:
-                    await asyncio.to_thread(apply_pbr)
-                    if state.ROUTER:
-                        await replay_healthy_routes()
-                except Exception as e:
-                    logger.error(f"Failed to re-apply PBR: {e}")
-            elif need_route_replay:
-                logger.info("Route interface changed, replaying routes...")
-                try:
-                    if state.ROUTER:
-                        await replay_healthy_routes()
-                except Exception as e:
-                    logger.error(f"Failed to replay routes: {e}")
-
-            last_state = {k: v for k, v in current_state.items() if k in all_monitored}
-
-        except Exception as e:
-            logger.error(f"Error in interface monitor: {e}")
-
-        await asyncio.sleep(5)
+    await run_periodic(
+        "interface monitor",
+        _tick,
+        interval=_INTERVAL_SECONDS,
+        stop_event=stop_event,
+        tick_timeout=_TICK_TIMEOUT_SECONDS,
+        logger=logger,
+    )

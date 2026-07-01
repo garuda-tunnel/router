@@ -114,3 +114,57 @@ async def test_retained_task_is_discarded_from_container_on_completion():
         "completed background task was not discarded from the retention "
         "container (potential unbounded growth over the process lifetime)"
     )
+
+
+async def test_retained_task_finishing_with_exception_is_logged_loudly(caplog):
+    """Observability: if a retained background task ever dies with an
+    exception, the done-callback must log it at ERROR with the traceback.
+
+    This is the guard that would have made the live vpn2 silent-death loud:
+    a retained task that finishes with an unretrieved exception produces NO
+    asyncio warning (the retention keeps it out of the GC-warning path), so
+    the fix must surface it explicitly.
+    """
+    import logging
+
+    import ipt_server.main as ipt_main
+
+    async def _boom():
+        raise RuntimeError("monitor loop died unexpectedly")
+
+    with caplog.at_level(logging.ERROR, logger="ipt_server.main"):
+        task = ipt_main._spawn_background(_boom())
+        with pytest.raises(RuntimeError):
+            await task
+        # done_callback fires via call_soon; yield so it runs.
+        await asyncio.sleep(0)
+
+    assert any(
+        record.levelno >= logging.ERROR
+        and "monitor loop died unexpectedly" in record.getMessage() + str(record.exc_info)
+        or (record.exc_info and "monitor loop died unexpectedly" in str(record.exc_info[1]))
+        for record in caplog.records
+    ), (
+        "a retained background task that finished with an exception did not "
+        "produce a loud ERROR log via the done-callback; a future silent "
+        "death would go unnoticed (the exact vpn2 failure mode)"
+    )
+
+
+async def test_retained_task_finishing_cleanly_is_not_logged_as_error(caplog):
+    """A background task that completes normally must NOT log an ERROR."""
+    import logging
+
+    import ipt_server.main as ipt_main
+
+    async def _quick():
+        return None
+
+    with caplog.at_level(logging.ERROR, logger="ipt_server.main"):
+        task = ipt_main._spawn_background(_quick())
+        await task
+        await asyncio.sleep(0)
+
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR], (
+        "a cleanly-completing background task must not emit an ERROR log"
+    )

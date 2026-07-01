@@ -28,10 +28,15 @@ from pinning.api import create_app
 from pinning.kernel import KernelReconciler
 from pinning.liveness import probe_egress
 from pinning.manager import PinningManager
+from tasks.periodic import run_periodic
 
 
 log = logging.getLogger(__name__)
 LIVENESS_INTERVAL_SECONDS = 5
+# Bounds one full liveness sweep (each egress probe is a to_thread FRR-bridge
+# call at up to _VTY_BRIDGE_TIMEOUT); a hung probe can never wedge the loop
+# (see tasks/periodic.py).
+LIVENESS_TICK_TIMEOUT_SECONDS = 60
 
 
 async def setup_pinning(
@@ -93,7 +98,8 @@ async def _liveness_loop(reconciler, catalog, interfaces_view, stop_event):
     # Throttle key for failure logging: full traceback once per changed outcome,
     # then suppress repeats — the retry itself is never suppressed (Fix B).
     last_logged_failure: dict[str, object] = {}
-    while not stop_event.is_set():
+
+    async def _tick() -> None:
         for egress, target in catalog.items():
             outcome = None  # bound before to_thread so the throttle key is robust
             try:
@@ -118,7 +124,12 @@ async def _liveness_loop(reconciler, catalog, interfaces_view, stop_event):
                     last_logged_failure[egress] = outcome
                 else:
                     log.debug("pinning liveness still failing for %s", egress)
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=LIVENESS_INTERVAL_SECONDS)
-        except asyncio.TimeoutError:
-            pass
+
+    await run_periodic(
+        "pinning liveness loop",
+        _tick,
+        interval=LIVENESS_INTERVAL_SECONDS,
+        stop_event=stop_event,
+        tick_timeout=LIVENESS_TICK_TIMEOUT_SECONDS,
+        logger=log,
+    )

@@ -66,15 +66,50 @@ logger = logging.getLogger(__name__)
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
+def _log_task_result(task: asyncio.Task) -> None:
+    """Done-callback: make an unexpected background-task death LOUD.
+
+    A retained task that finishes with an exception produces NO asyncio
+    warning (asyncio only warns "Task exception was never retrieved" when a
+    task with an unretrieved exception is *garbage-collected*; the retention
+    container deliberately keeps a strong reference, which suppresses that
+    warning). That is exactly how the live vpn2 loop deaths went silent.
+
+    This callback retrieves and logs the outcome so any future death/stall is
+    immediately visible in the pod logs:
+      * cancellation -> INFO (expected during shutdown),
+      * exception    -> ERROR with full traceback,
+      * clean return -> DEBUG (background loops are not expected to return on
+        their own; if one does, note it so it can be investigated).
+    """
+    if task.cancelled():
+        logger.info("background task %r was cancelled", task.get_name())
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error(
+            "background task %r died with an exception (loop no longer running)",
+            task.get_name(),
+            exc_info=exc,
+        )
+    else:
+        logger.debug(
+            "background task %r finished cleanly (unexpected for a monitor loop)",
+            task.get_name(),
+        )
+
+
 def _retain_task(task: asyncio.Task) -> asyncio.Task:
     """Add a strong reference to `task` so it can't be silently GC'd.
 
-    The done-callback removes it once it completes so the container doesn't
-    grow unbounded over the process lifetime; while pending, it is always
-    reachable via _BACKGROUND_TASKS.
+    The done-callbacks remove it from the container once it completes (so the
+    container doesn't grow unbounded over the process lifetime) and log the
+    task's outcome loudly (so a future silent death is never invisible again).
+    While pending, it is always reachable via _BACKGROUND_TASKS.
     """
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
+    task.add_done_callback(_log_task_result)
     return task
 
 
