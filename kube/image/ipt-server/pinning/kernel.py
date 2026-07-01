@@ -27,6 +27,11 @@ from typing import Dict, Mapping, Optional
 import nftables
 from pyroute2 import Conntrack, IPRoute
 
+try:
+    from pyroute2.netlink.exceptions import NetlinkError
+except ImportError:  # pragma: no cover - pyroute2 layout fallback
+    NetlinkError = Exception  # type: ignore[assignment,misc]
+
 from pinning.nft_renderer import PIN_MARK_BASE, NftRenderer
 
 
@@ -67,6 +72,9 @@ class KernelReconciler:
             api_port=api_port,
             ttl_seconds=ttl_seconds,
         )
+        # Strong reference to the pinning liveness task, held for the process
+        # lifetime so it is not weak-ref-GC-eligible (set by setup_pinning).
+        self._liveness_task: Optional[asyncio.Task] = None
 
     def _egress_index(self, egress: str) -> int:
         keys = self._renderer.sorted_keys
@@ -123,7 +131,18 @@ class KernelReconciler:
                 kwargs["oif"] = oif
             if nh_ip is not None:
                 kwargs["gateway"] = nh_ip
-            ipr.route("replace", **kwargs)
+            try:
+                ipr.route("replace", **kwargs)
+            except NetlinkError as exc:
+                log.error(
+                    "pinning: table %d route replace REJECTED via=%s dev=%s: %s",
+                    table, nh_ip, nh_dev, exc,
+                )
+                raise
+            log.info(
+                "pinning: table %d default via %s dev %s installed",
+                table, nh_ip, nh_dev,
+            )
 
     @staticmethod
     def _sync_apply_nft(ruleset_text: str) -> None:

@@ -50,9 +50,13 @@ async def setup_pinning(
     # into a chain that exists.
     await reconciler.reconcile({})
 
-    asyncio.create_task(
+    liveness_task = asyncio.create_task(
         _liveness_loop(reconciler, cfg.pinning_egress, interfaces_view, stop_event)
     )
+    # Retain a strong reference for the process lifetime: an unreferenced
+    # asyncio.Task is weak-ref-GC-eligible and can be silently collected
+    # mid-run, killing the liveness loop.
+    reconciler._liveness_task = liveness_task
 
     app = create_app(
         manager=manager, reconciler=reconciler, catalog=cfg.pinning_egress,
@@ -83,20 +87,37 @@ async def _liveness_loop(reconciler, catalog, interfaces_view, stop_event):
     breaking DNS hijack as soon as pinning is enabled.  Hop into a
     worker thread instead.
     """
-    last_alive: dict[str, bool] = {}
+    # last_alive is keyed on the FULL outcome tuple (alive, nh_ip, nh_dev) so a
+    # same-alive nexthop change (OSPF SPF recompute) re-fires the update (Fix C).
+    last_alive: dict[str, tuple] = {}
+    # Throttle key for failure logging: full traceback once per changed outcome,
+    # then suppress repeats — the retry itself is never suppressed (Fix B).
+    last_logged_failure: dict[str, object] = {}
     while not stop_event.is_set():
         for egress, target in catalog.items():
+            outcome = None  # bound before to_thread so the throttle key is robust
             try:
                 alive, nh_ip, nh_dev = await asyncio.to_thread(
                     probe_egress, target, set(interfaces_view()),
                 )
-                if last_alive.get(egress) != alive:
+                outcome = (alive, nh_ip, nh_dev)
+                if last_alive.get(egress) != outcome:
                     await reconciler.update_egress_liveness(
                         egress=egress, alive=alive, nh_ip=nh_ip, nh_dev=nh_dev,
                     )
-                    last_alive[egress] = alive
+                    # SUCCESS-ONLY: reached only if update_egress_liveness did
+                    # not raise, so a transient failure is never cached and is
+                    # retried on the next tick (Fix B).
+                    last_alive[egress] = outcome
+                    last_logged_failure.pop(egress, None)  # clear throttle on recovery
             except Exception:
-                log.exception("pinning liveness probe failed for %s", egress)
+                # THROTTLE the log (not the retry): full traceback once per
+                # changed (egress, outcome) key, then drop to debug.
+                if last_logged_failure.get(egress) != outcome:
+                    log.exception("pinning liveness probe failed for %s", egress)
+                    last_logged_failure[egress] = outcome
+                else:
+                    log.debug("pinning liveness still failing for %s", egress)
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=LIVENESS_INTERVAL_SECONDS)
         except asyncio.TimeoutError:

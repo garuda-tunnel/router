@@ -669,15 +669,25 @@ class TestProbeGwAlive:
         assert via == "172.30.0.4"
         assert dev == "backbone"
 
-    def test_outer_de_dead_when_only_pt_advertises(self):
+    def test_outer_de_alive_via_direct_adjacency_even_when_not_default_originator(self):
+        # de (10.9.21.2, owned by 10.130.30.33) is a directly-adjacent OSPF
+        # neighbour with a routable RIB entry (10.9.21.0/24 -> 172.30.0.4), so
+        # it is reachable regardless of whether it originates a default route.
+        # The direct-adjacency short-circuit in _probe_gw_alive resolves it
+        # BEFORE the default-originator fallback is consulted; the resolver
+        # returns the OSPF-RIB nexthop (172.30.0.4), which is kernel-installable
+        # (Fix A). The former "dead unless default-originator" expectation is
+        # obsolete: default origination is only a fallback for gws with no
+        # direct RIB adjacency.
         with self._patch_vtysh(
             ROUTER_LSDB_TWO_OUTERS,
             EXTERNAL_LSDB_ONLY_PT,
             RIB_TWO_OUTERS,
         ):
             alive, via, dev = _probe_gw_alive("10.9.21.2")
-        assert alive is False
-        assert (via, dev) == (None, None)
+        assert alive is True
+        assert via == "172.30.0.4"
+        assert dev == "backbone"
 
     def test_outer_pt_dead_when_rib_drops_it(self):
         """Dead Interval fires: outer_pt's R-route disappears."""
@@ -739,3 +749,163 @@ class TestProbeGwAlive:
             alive, via, dev = _probe_gw_alive("10.9.19.2")
         assert alive is False
         assert (via, dev) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# Fix A: _resolve_direct_router_nexthop must return the OSPF-RIB nexthop
+# ---------------------------------------------------------------------------
+
+from tasks.nexthop_monitor import _resolve_direct_router_nexthop
+from tasks.tests.fixtures.vxxlcx_ospf import VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+from tasks.tests.fixtures.vpn2_ospf_egress import VPN2_ROUTER_LSDB, VPN2_RIB
+
+
+class TestResolveDirectRouterNexthopReturnsOspfRibNexthop:
+    """Fix A: resolver must return the OSPF-RIB nexthops[0].ip, not the
+    owning router's own tunnel interface-address."""
+
+    def test_returns_ospf_rib_nexthop_for_tunnel_edge_usa(self):
+        # usa edge router 10.130.30.23 advertises only tunnel IP 10.9.19.2;
+        # OSPF RIB carries routable 172.30.0.35 for 10.9.19.0/28.
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.23", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+        ) == ("172.30.0.35", "backbone")
+
+    def test_returns_ospf_rib_nexthop_for_tunnel_edge_mexico(self):
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.33", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+        ) == ("172.30.0.36", "backbone")
+
+    def test_returns_ospf_rib_nexthop_for_tunnel_edge_de_vpn2(self):
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.33", VPN2_ROUTER_LSDB, VPN2_RIB
+        ) == ("172.30.0.112", "backbone")
+
+    def test_returns_ospf_rib_nexthop_for_tunnel_edge_pt_vpn2(self):
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.23", VPN2_ROUTER_LSDB, VPN2_RIB
+        ) == ("172.30.0.110", "backbone")
+
+    def test_border_directly_attached_unchanged_vxxlcx(self):
+        # border 10.130.30.50 owns backbone iface 172.30.0.38; transit
+        # 172.30.0.0/24 has nexthops[0].ip==" " -> guard falls back to iface addr.
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.50", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+        ) == ("172.30.0.38", "backbone")
+
+    def test_border_directly_attached_unchanged_vpn2(self):
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.50", VPN2_ROUTER_LSDB, VPN2_RIB
+        ) == ("172.30.0.116", "backbone")
+
+
+class TestRegressionEgressBlackholeFieldSelectionBug:
+    """Regression for the field-selection defect: resolver used to return the
+    edge's own tunnel IP (kernel-rejected), now returns the OSPF-RIB nexthop."""
+
+    def test_usa_no_longer_returns_tunnel_ip_10_9_19_2(self):
+        gw, dev = _resolve_direct_router_nexthop(
+            "10.130.30.23", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+        )
+        assert gw != "10.9.19.2", (
+            "field-selection bug: resolver returned edge tunnel IP "
+            "(kernel-rejected 'Nexthop has invalid gateway'), must return "
+            "OSPF-RIB nexthops[0].ip 172.30.0.35"
+        )
+        assert gw == "172.30.0.35"
+
+
+class TestResolverLongestPrefixMatchAndSkipDefault:
+    """Fix A invariants 1-2: the resolver must skip 0.0.0.0/0 and pick the
+    longest-prefix covering route, even when a broad prefix precedes the
+    specific tunnel prefix in dict order (FRR JSON order is non-contractual)."""
+
+    def test_broad_prefix_before_specific_still_picks_specific(self):
+        # dict order deliberately puts the default and a broad /16 BEFORE the
+        # specific /28 that carries the correct backbone nexthop for usa.
+        router_lsdb = VXXLCX_ROUTER_LSDB
+        rib = {
+            "0.0.0.0/0": {"nexthops": [{"ip": "172.30.0.38", "via": "backbone"}]},
+            "10.0.0.0/8": {"nexthops": [{"ip": "172.30.0.99", "via": "backbone"}]},
+            "10.9.19.0/28": {"nexthops": [{"ip": "172.30.0.35", "via": "backbone"}]},
+        }
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.23", router_lsdb, rib
+        ) == ("172.30.0.35", "backbone"), (
+            "resolver must LPM-select the specific /28 and skip the default/broad "
+            "prefixes even though they appear first in dict order"
+        )
+
+    def test_default_route_never_matched(self):
+        # Only 0.0.0.0/0 present -> nothing to match -> None (never the default gw).
+        rib = {"0.0.0.0/0": {"nexthops": [{"ip": "172.30.0.38", "via": "backbone"}]}}
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.23", VXXLCX_ROUTER_LSDB, rib
+        ) is None
+
+
+class TestResolverEcmpFirstUsableNexthop:
+    """Fix A invariant 3: iterate nexthops, pick the first USABLE one; a blank
+    first nexthop must not shadow a later routable one."""
+
+    def test_blank_first_nexthop_skipped_for_later_usable(self):
+        rib = {
+            "10.9.19.0/28": {"nexthops": [
+                {"ip": " ", "directlyAttachedTo": "backbone"},   # blank first
+                {"ip": "172.30.0.35", "via": "backbone"},         # usable second
+            ]},
+        }
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.23", VXXLCX_ROUTER_LSDB, rib
+        ) == ("172.30.0.35", "backbone")
+
+
+class TestResolverFallbackNeverTunnelIp:
+    """Fix A robust-fallback guard: the directly-attached fallback must only
+    return an on-backbone address, never a tunnel-edge P2P IP."""
+
+    def test_fallback_rejected_for_non_backbone_address(self):
+        # A directly-attached route whose covering address is the tunnel IP
+        # 10.9.19.2 must NOT be returned as a gateway (not on backbone).
+        rib = {
+            "10.9.19.0/28": {"nexthops": [
+                {"ip": " ", "directlyAttachedTo": "backbone"},
+            ]},
+        }
+        # usa edge 10.130.30.23 only advertises 10.9.19.2 (a tunnel IP); with a
+        # blank-.ip directly-attached route the fallback must refuse it -> None.
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.23", VXXLCX_ROUTER_LSDB, rib
+        ) is None
+
+
+class TestProbeGwAliveTunnelEdgeInstallable:
+    """_probe_gw_alive returns an installable (True, backbone-ip, backbone)
+    tuple for a tunnel-edge egress after Fix A."""
+
+    def _patch_vtysh(self, router_lsdb, rib):
+        def side_effect(command):
+            if "database router" in command:
+                return router_lsdb
+            if "ospf route" in command:
+                return rib
+            if "database external" in command:
+                return {"asExternalLinkStates": []}
+            return None
+        return patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect)
+
+    def test_usa_probe_returns_installable_backbone_nexthop(self):
+        with self._patch_vtysh(VXXLCX_ROUTER_LSDB, VXXLCX_RIB):
+            alive, nh_ip, nh_dev = _probe_gw_alive("10.9.19.2")
+        assert (alive, nh_ip, nh_dev) == (True, "172.30.0.35", "backbone")
+
+
+def test_probe_logs_branch_on_unknown_gw(caplog):
+    import logging as _l
+    with patch("tasks.nexthop_monitor._vtysh",
+               side_effect=lambda c: VXXLCX_ROUTER_LSDB if "database router" in c else VXXLCX_RIB):
+        with caplog.at_level(_l.DEBUG, logger="tasks.nexthop_monitor"):
+            alive, _, _ = _probe_gw_alive("192.0.2.99")  # not owned by any router
+    assert alive is False
+    assert any("no owning router" in r.message.lower() or "192.0.2.99" in r.message
+               for r in caplog.records), "expected a diagnostic line for the False branch"

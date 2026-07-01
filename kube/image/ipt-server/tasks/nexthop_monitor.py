@@ -24,6 +24,24 @@ _GW_FAILURE_THRESHOLD = 3  # consecutive failures before treating gw as dead
 _VTY_BRIDGE_URL = "http://127.0.0.1:7890/vtysh"
 _VTY_BRIDGE_TIMEOUT = 5
 
+# The OSPF backbone transit subnet. The directly-attached fallback in
+# _resolve_direct_router_nexthop may only return an address on this subnet as a
+# kernel gateway (never a tunnel-edge WireGuard P2P IP, which the kernel rejects
+# with "Nexthop has invalid gateway"). See spec §6.1 (Fix 8).
+_BACKBONE_SUBNET = ipaddress.ip_network("172.30.0.0/24")
+
+
+def _is_on_backbone(address: str) -> bool:
+    """Return True iff *address* is on the OSPF backbone subnet (172.30.0.0/24).
+
+    Used to guard the directly-attached fallback so it can only ever return a
+    valid on-backbone gateway, never a tunnel-edge P2P IP.
+    """
+    try:
+        return ipaddress.ip_address(address) in _BACKBONE_SUBNET
+    except ValueError:
+        return False
+
 
 def _vtysh(command: str) -> Optional[dict]:
     """POST a vtysh command to the FRR sidecar HTTP bridge.
@@ -177,26 +195,57 @@ def _resolve_direct_router_nexthop(
                 if address:
                     router_addresses.append(address)
 
+    best_prefixlen = -1
+    best: Optional[tuple[str, str]] = None
     for route_prefix, route in rib.items():
+        if route_prefix == "0.0.0.0/0":
+            continue  # invariant 1: a default route never represents a direct adjacency
         if not isinstance(route, dict):
             continue
         nexthops = route.get("nexthops", [])
         if not isinstance(nexthops, list) or not nexthops:
             continue
-        via = nexthops[0].get("directlyAttachedTo") or nexthops[0].get("via")
-        if not via:
-            continue
         try:
             network = ipaddress.ip_network(route_prefix, strict=False)
         except ValueError:
             continue
+        covering_address = None
         for address in router_addresses:
             try:
                 if ipaddress.ip_address(address) in network:
-                    return (address, via)
+                    covering_address = address
+                    break
             except ValueError:
                 continue
-    return None
+        if covering_address is None:
+            continue
+        if network.prefixlen <= best_prefixlen:
+            continue  # invariant 2: longest-prefix-match — keep the most specific
+        resolved = None
+        fallback = None
+        for nh in nexthops:
+            if not isinstance(nh, dict):
+                continue
+            via = nh.get("directlyAttachedTo") or nh.get("via")
+            if not via:
+                continue
+            nh_ip = nh.get("ip")
+            gw = nh_ip.strip() if isinstance(nh_ip, str) else None
+            if gw:
+                # invariant 3: first usable nexthop — the OSPF-RIB routable
+                # nexthop is the real gateway (this is the field-selection fix).
+                resolved = (gw, via)
+                break
+            if fallback is None and _is_on_backbone(covering_address):
+                # directly-attached (blank .ip): on-link gateway route via the
+                # backbone interface-address — only if it is a valid on-backbone
+                # gateway, never a tunnel-edge P2P IP (Fix 8).
+                fallback = (covering_address, via)
+        if resolved is not None:
+            best, best_prefixlen = resolved, network.prefixlen
+        elif fallback is not None:
+            best, best_prefixlen = fallback, network.prefixlen
+    return best
 
 
 def _probe_gw_alive(gw: str) -> tuple[bool, Optional[str], Optional[str]]:
@@ -211,13 +260,16 @@ def _probe_gw_alive(gw: str) -> tuple[bool, Optional[str], Optional[str]]:
     """
     router_lsdb = _vtysh("show ip ospf database router json")
     if router_lsdb is None:
+        logger.debug("probe gw=%s: no router-LSDB from vty bridge", gw)
         return False, None, None
     router_id = _find_router_owning_address(gw, router_lsdb)
     if not router_id:
+        logger.debug("probe gw=%s: no owning router in OSPF router-LSDB", gw)
         return False, None, None
 
     rib = _vtysh("show ip ospf route json")
     if rib is None:
+        logger.debug("probe gw=%s: no OSPF RIB from vty bridge", gw)
         return False, None, None
 
     direct_nh = _resolve_direct_router_nexthop(router_id, router_lsdb, rib)
@@ -226,12 +278,24 @@ def _probe_gw_alive(gw: str) -> tuple[bool, Optional[str], Optional[str]]:
 
     external_lsdb = _vtysh("show ip ospf database external json")
     if external_lsdb is None:
+        logger.debug(
+            "probe gw=%s: router %s has no direct nexthop and no external-LSDB",
+            gw, router_id,
+        )
         return False, None, None
     if not _router_originates_default(router_id, external_lsdb):
+        logger.debug(
+            "probe gw=%s: router %s has no direct nexthop and does not originate default",
+            gw, router_id,
+        )
         return False, None, None
 
     nh = _resolve_router_nexthop(router_id, rib)
     if nh is None:
+        logger.debug(
+            "probe gw=%s: router %s originates default but has no router nexthop in RIB",
+            gw, router_id,
+        )
         return False, None, None
     return True, nh[0], nh[1]
 

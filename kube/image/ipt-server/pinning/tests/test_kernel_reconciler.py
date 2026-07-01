@@ -234,6 +234,45 @@ def test_update_egress_liveness_dead_writes_blackhole():
         pr_patcher.stop()
 
 
+def test_update_egress_liveness_logs_rejected_gateway_and_reraises(caplog):
+    """A NetlinkError from `ip route replace` must be logged with the resolved
+    gateway/dev/table (a single grep-able line) and re-raised so the liveness
+    loop's except handler still records it (Task 5 diagnostics)."""
+    import logging as _l
+
+    from pyroute2.netlink.exceptions import NetlinkError
+
+    pr_patcher, mock_iproute = _make_iproute_ctx()
+
+    def route_side_effect(*args, **kwargs):
+        if args and args[0] == "replace":
+            raise NetlinkError(22, "Nexthop has invalid gateway")
+        return MagicMock()
+
+    mock_iproute.route.side_effect = route_side_effect
+    try:
+        rec = KernelReconciler(
+            catalog=_catalog("usa"),
+            portal_addr="192.0.2.1",
+            portal_port=1,
+            api_port=80,
+        )
+        with caplog.at_level(_l.ERROR, logger="pinning.kernel"):
+            with pytest.raises(NetlinkError):
+                asyncio.run(rec.update_egress_liveness(
+                    egress="usa", alive=True, nh_ip="10.9.19.2", nh_dev=None,
+                ))
+        rejected = [
+            r for r in caplog.records
+            if r.levelno >= _l.ERROR and "10.9.19.2" in r.getMessage()
+        ]
+        assert rejected, (
+            "expected a grep-able ERROR line naming the rejected gateway 10.9.19.2"
+        )
+    finally:
+        pr_patcher.stop()
+
+
 def _make_conntrack_entry(saddr, daddr, dport, proto=6):
     """Build a mock ConntrackEntry whose tuple_orig has the given fields."""
     tup = MagicMock()

@@ -90,3 +90,220 @@ async def test_liveness_loop_does_not_block_event_loop():
         f"event loop was blocked: other coroutine woke at {elapsed*1000:.0f}ms "
         "(expected <150ms; probe takes 200ms synchronously)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Fix B/C: liveness task retention, one-egress isolation, success-only
+# last_alive (no failure caching), and throttled failure logging.
+# ---------------------------------------------------------------------------
+
+
+def _make_cfg():
+    """Minimal cfg stand-in for setup_pinning with an empty egress catalog so
+    no real netlink work runs when the reconciler methods are patched."""
+    cfg = MagicMock()
+    cfg.pinning_ttl = 86400
+    cfg.pinning_egress = {}
+    cfg.pinning_portal_anchor_addr = "1.1.1.1"
+    cfg.pinning_portal_anchor_port = 1111
+    cfg.pinning_api_port = 0  # ephemeral port; site.start binds it
+    return cfg
+
+
+@pytest.mark.asyncio
+async def test_liveness_task_reference_is_retained():
+    """The liveness task must be retained (not fire-and-forget) so it is not
+    garbage-collected mid-run (weak-ref GC of an unreferenced asyncio.Task)."""
+    import gc
+    import weakref
+
+    created = {}
+    real_create_task = asyncio.create_task
+
+    def tracking_create_task(coro, *a, **k):
+        task = real_create_task(coro, *a, **k)
+        if "_liveness_loop" in getattr(coro, "__qualname__", ""):
+            created["task"] = task
+            created["ref"] = weakref.ref(task)
+        return task
+
+    cfg = _make_cfg()
+    stop = asyncio.Event()
+
+    async def _noop(*a, **k):
+        return None
+
+    with patch.object(
+        bootstrap.KernelReconciler, "install_static_rules", _noop
+    ), patch.object(
+        bootstrap.KernelReconciler, "reconcile", _noop
+    ), patch("asyncio.create_task", side_effect=tracking_create_task):
+        _, _, _ = await bootstrap.setup_pinning(cfg, lambda: [], stop)
+
+    # Drop the only local strong ref we know of and force GC.
+    task = created.pop("task")
+    del task
+    gc.collect()
+    assert created["ref"]() is not None, (
+        "liveness task was GC-eligible: setup_pinning must retain a strong "
+        "reference for the process lifetime"
+    )
+    stop.set()
+
+
+@pytest.mark.asyncio
+async def test_one_egress_exception_does_not_stop_probing_others():
+    """A raise inside update_egress_liveness for one egress must not stop the
+    loop from probing the other egresses on the same tick."""
+    probed = []
+
+    def probe(target, interfaces):
+        probed.append(target.egress_name)
+        return (True, "172.30.0.35", "backbone")
+
+    reconciler = MagicMock()
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        if egress == "usa":
+            raise RuntimeError("Nexthop has invalid gateway")
+    reconciler.update_egress_liveness = update
+
+    # NB: MagicMock consumes the `name=` kwarg, so tag identity via a plain attr.
+    usa = MagicMock(gw="10.9.19.2", dev=None)
+    usa.egress_name = "usa"
+    border = MagicMock(gw="10.130.30.50", dev=None)
+    border.egress_name = "border"
+    catalog = {"usa": usa, "border": border}
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.05)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            stopper(),
+        )
+    assert "border" in probed, "loop stopped after usa raised; border never probed"
+
+
+@pytest.mark.asyncio
+async def test_transient_install_failure_is_retried_not_cached():
+    """A transient failure in update_egress_liveness must NOT be cached: the
+    next tick with the same outcome must re-fire update (success-only last_alive).
+    Otherwise a transient NetlinkError permanently blackholes the egress."""
+    calls = []
+    fail_once = {"done": False}
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        calls.append((egress, alive, nh_ip, nh_dev))
+        if not fail_once["done"]:
+            fail_once["done"] = True
+            raise RuntimeError("transient NetlinkError")
+        # second call succeeds
+
+    reconciler = MagicMock()
+    reconciler.update_egress_liveness = update
+
+    def probe(target, interfaces):
+        return (True, "172.30.0.35", "backbone")  # identical outcome every tick
+
+    catalog = {"usa": MagicMock(name="usa", gw="10.9.19.2", dev=None)}
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.08)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe), \
+         patch.object(bootstrap, "LIVENESS_INTERVAL_SECONDS", 0.02):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            stopper(),
+        )
+
+    assert len(calls) >= 2, (
+        "transient failure was cached and never retried: update_egress_liveness "
+        "must re-fire on the next tick because last_alive is written on success only"
+    )
+
+
+@pytest.mark.asyncio
+async def test_persistent_failure_does_not_hotloop_log_spam(caplog):
+    """A persistent failure must keep retrying but log the full traceback only
+    once per changed (egress, outcome) key (throttled), not every tick."""
+    import logging as _l
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        raise RuntimeError("persistent NetlinkError")
+
+    reconciler = MagicMock()
+    reconciler.update_egress_liveness = update
+
+    def probe(target, interfaces):
+        return (True, "172.30.0.35", "backbone")  # identical failing outcome
+
+    catalog = {"usa": MagicMock(name="usa", gw="10.9.19.2", dev=None)}
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.1)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe), \
+         patch.object(bootstrap, "LIVENESS_INTERVAL_SECONDS", 0.02), \
+         caplog.at_level(_l.ERROR, logger="pinning.bootstrap"):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            stopper(),
+        )
+
+    spam = [r for r in caplog.records
+            if r.levelno >= _l.ERROR and "usa" in r.getMessage()]
+    assert len(spam) == 1, (
+        f"expected the failure traceback logged once (throttled), got {len(spam)}; "
+        "the retry must continue but the log must not spam every tick"
+    )
+
+
+@pytest.mark.asyncio
+async def test_same_alive_different_nexthop_refires_update():
+    """OSPF SPF recompute can change nh_ip while alive stays True; the loop
+    must re-fire update_egress_liveness on that transition."""
+    calls = []
+    reconciler = MagicMock()
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        calls.append((egress, alive, nh_ip, nh_dev))
+    reconciler.update_egress_liveness = update
+
+    seq = iter([
+        (True, "172.30.0.35", "backbone"),   # tick 1
+        (True, "172.30.0.99", "backbone"),   # tick 2: same alive, new nexthop
+    ])
+
+    def probe(target, interfaces):
+        try:
+            return next(seq)
+        except StopIteration:
+            return (True, "172.30.0.99", "backbone")
+
+    catalog = {"usa": MagicMock(name="usa", gw="10.9.19.2", dev=None)}
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.06)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe), \
+         patch.object(bootstrap, "LIVENESS_INTERVAL_SECONDS", 0.02):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            stopper(),
+        )
+
+    nexthops = [c[2] for c in calls if c[0] == "usa"]
+    assert "172.30.0.35" in nexthops and "172.30.0.99" in nexthops, (
+        "loop keyed last_alive on alive alone and missed the nexthop change"
+    )
