@@ -50,6 +50,38 @@ from ipt_server import state
 
 logger = logging.getLogger(__name__)
 
+# Strong-reference container for fire-and-forget background tasks.
+#
+# asyncio.create_task() docs: "Save a reference to the result of this
+# function, to avoid a task disappearing mid-execution. The event loop only
+# keeps weak references to tasks. A task that isn't referenced elsewhere may
+# get garbage collected at any time, even before it's done."
+#
+# Proven live on vpn2: the monitor loops (and the pinning http_task) were
+# spawned via bare asyncio.create_task(...) with the return value discarded.
+# Each died silently after its first tick (no exception) once the cyclic GC
+# reclaimed the unreferenced Task, leaving pinning tables 301/302 blackhole.
+# Every background task in this module MUST go through _spawn_background /
+# _retain_task so it stays alive for the process lifetime.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _retain_task(task: asyncio.Task) -> asyncio.Task:
+    """Add a strong reference to `task` so it can't be silently GC'd.
+
+    The done-callback removes it once it completes so the container doesn't
+    grow unbounded over the process lifetime; while pending, it is always
+    reachable via _BACKGROUND_TASKS.
+    """
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
+def _spawn_background(coro) -> asyncio.Task:
+    """Create a background task and retain a strong reference to it."""
+    return _retain_task(asyncio.create_task(coro))
+
 
 def _template_env() -> jinja2.Environment:
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(_PACKAGE_ROOT))
@@ -465,10 +497,10 @@ async def async_main():
     )
 
     # Start Interface Monitor
-    asyncio.create_task(monitor_interfaces(stop_event))
+    _spawn_background(monitor_interfaces(stop_event))
 
     # Start Nexthop Monitor: OSPF-aware single-active-member selection
-    asyncio.create_task(
+    _spawn_background(
         monitor_nexthops(
             state.ROUTER._nhg_registry,
             state.ROUTER._member_nhids,
@@ -478,11 +510,11 @@ async def async_main():
 
     # Start DNS backend monitor so DNAT is reconciled when garuda_pdns becomes
     # available (it starts after garuda_ipt due to depends_on ordering).
-    asyncio.create_task(monitor_dns_backend(stop_event))
+    _spawn_background(monitor_dns_backend(stop_event))
 
     # Start Route Health Monitor (no-op if no gated interfaces configured)
     health_source = build_route_health_source(state.CONFIG)
-    asyncio.create_task(monitor_route_health(health_source))
+    _spawn_background(monitor_route_health(health_source))
 
     # Pinning subsystem (opt-in: empty catalog -> no kernel writes, no HTTP).
     if getattr(state.CONFIG, "pinning_egress", None):
@@ -492,13 +524,20 @@ async def async_main():
             with state.INTERFACES_LOCK:
                 return list(state.INTERFACES.keys())
 
-        manager, reconciler, _http_task = await setup_pinning(
+        manager, reconciler, http_task = await setup_pinning(
             cfg=state.CONFIG,
             interfaces_view=_interfaces_view,
             stop_event=stop_event,
         )
+        # Retain manager/reconciler/http_task for the process lifetime.
+        # state.PINNING_* anchors manager/reconciler via the always-imported
+        # ipt_server.state module; http_task additionally goes through the
+        # same retention container as the monitor tasks (belt-and-suspenders
+        # alongside reconciler._liveness_task's own retention in
+        # pinning/bootstrap.py).
         state.PINNING_MANAGER = manager
         state.PINNING_RECONCILER = reconciler
+        _retain_task(http_task)
         logger.info(
             "pinning enabled: %d egresses, ttl=%ds, port=%d",
             len(state.CONFIG.pinning_egress),
