@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/garuda-tunnel/router-internal/compare/v1.2.2...v1.2.3) (2026-07-01)
+
+
+### Bug Fixes
+
+* **ipt-server:** bump appVersion for loop-death-resilience fix ([#30](https://github.com/garuda-tunnel/router-internal/issues/30)) ([dcb9d7a](https://github.com/garuda-tunnel/router-internal/commit/dcb9d7a4482639a89b93d74d5a151aaefc899788))
+
 ## [1.2.2](https://github.com/garuda-tunnel/router-internal/compare/v1.2.1...v1.2.2) (2026-07-01)
 
 
