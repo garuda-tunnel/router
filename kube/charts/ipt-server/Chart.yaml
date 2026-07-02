@@ -3,5 +3,5 @@ name: ipt-server
 description: "Garuda ipt_server (garuda_ipt + powerdns) vanilla guest pod. FRR
   sidecar injected by garuda MAP."
 type: application
-version: 1.2.3
+version: 1.2.4
 appVersion: "0.1.4"

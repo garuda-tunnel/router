@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/garuda-tunnel/router-internal/compare/v1.2.3...v1.2.4) (2026-07-02)
+
+
+### Bug Fixes
+
+* **ipt-server:** bump appVersion for iteration-observability logging fix ([#33](https://github.com/garuda-tunnel/router-internal/issues/33)) ([5058db6](https://github.com/garuda-tunnel/router-internal/commit/5058db6141519b963a59e5700d7cc828ff0f9550))
+
 ## [1.2.3](https://github.com/garuda-tunnel/router-internal/compare/v1.2.2...v1.2.3) (2026-07-01)
 
 
