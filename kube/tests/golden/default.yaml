@@ -26,195 +26,6 @@ data:
   IPT_MSS_CLAMP_ENABLED: "true"
 
 ---
-# Source: ipt-server/templates/runtime-patches.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ipt-server-runtime-patches
-  namespace: "garuda"
-  labels:
-    app.kubernetes.io/name: ipt-server
-    app.kubernetes.io/instance: "ipt-server"
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/part-of: garuda
-    garuda.managed-by: helm
-data:
-  sitecustomize.py: |-
-    import builtins
-    import ipaddress
-    import os
-    import socket
-    import sys
-    
-    
-    _NEXTHOP_MONITOR_MODULES = (
-        "tasks.nexthop_monitor",
-        "ipt_server.tasks.nexthop_monitor",
-    )
-    
-    
-    def _find_router_owning_address(gw, router_lsdb):
-        if not isinstance(router_lsdb, dict):
-            return None
-        areas = router_lsdb.get("routerLinkStates", {}).get("areas", {})
-        if not isinstance(areas, dict):
-            return None
-        try:
-            gw_addr = ipaddress.ip_address(gw)
-        except ValueError:
-            return None
-        stub_match = None
-        for area_lsas in areas.values():
-            if not isinstance(area_lsas, list):
-                continue
-            for lsa in area_lsas:
-                if not isinstance(lsa, dict):
-                    continue
-                advertising_router = lsa.get("advertisingRouter")
-                router_links = lsa.get("routerLinks", {})
-                if not isinstance(router_links, dict):
-                    continue
-                for link in router_links.values():
-                    if not isinstance(link, dict):
-                        continue
-                    if link.get("routerInterfaceAddress") == gw:
-                        return advertising_router
-                    if link.get("linkType") != "Stub Network":
-                        continue
-                    network_address = link.get("networkAddress")
-                    network_mask = link.get("networkMask")
-                    if network_address is None or network_mask is None:
-                        continue
-                    try:
-                        network = ipaddress.ip_network(
-                            f"{network_address}/{network_mask}", strict=False
-                        )
-                    except ValueError:
-                        continue
-                    if gw_addr in network:
-                        stub_match = advertising_router
-        return stub_match
-    
-    
-    def _resolve_direct_router_nexthop(router_id, router_lsdb, rib):
-        if not isinstance(router_lsdb, dict) or not isinstance(rib, dict):
-            return None
-        areas = router_lsdb.get("routerLinkStates", {}).get("areas", {})
-        if not isinstance(areas, dict):
-            return None
-        router_addresses = []
-        for area_lsas in areas.values():
-            if not isinstance(area_lsas, list):
-                continue
-            for lsa in area_lsas:
-                if not isinstance(lsa, dict) or lsa.get("advertisingRouter") != router_id:
-                    continue
-                router_links = lsa.get("routerLinks", {})
-                if not isinstance(router_links, dict):
-                    continue
-                for link in router_links.values():
-                    if not isinstance(link, dict):
-                        continue
-                    address = link.get("routerInterfaceAddress")
-                    if address:
-                        router_addresses.append(address)
-        for route_prefix, route in rib.items():
-            if not isinstance(route, dict):
-                continue
-            nexthops = route.get("nexthops", [])
-            if not isinstance(nexthops, list) or not nexthops:
-                continue
-            via = nexthops[0].get("directlyAttachedTo")
-            if not via:
-                continue
-            try:
-                network = ipaddress.ip_network(route_prefix, strict=False)
-            except ValueError:
-                continue
-            for address in router_addresses:
-                try:
-                    if ipaddress.ip_address(address) in network:
-                        return (address, via)
-                except ValueError:
-                    continue
-        return None
-    
-    
-    def _probe_gw_alive(gw):
-        nexthop_monitor = _get_nexthop_monitor_module()
-        if nexthop_monitor is None:
-            return False, None, None
-        router_lsdb = nexthop_monitor._vtysh("show ip ospf database router json")
-        if router_lsdb is None:
-            return False, None, None
-        router_id = _find_router_owning_address(gw, router_lsdb)
-        if not router_id:
-            return False, None, None
-        rib = nexthop_monitor._vtysh("show ip ospf route json")
-        if rib is None:
-            return False, None, None
-        direct_nh = _resolve_direct_router_nexthop(router_id, router_lsdb, rib)
-        if direct_nh is not None:
-            return True, direct_nh[0], direct_nh[1]
-        external_lsdb = nexthop_monitor._vtysh("show ip ospf database external json")
-        if external_lsdb is None:
-            return False, None, None
-        if not nexthop_monitor._router_originates_default(router_id, external_lsdb):
-            return False, None, None
-        nh = nexthop_monitor._resolve_router_nexthop(router_id, rib)
-        if nh is None:
-            return False, None, None
-        return True, nh[0], nh[1]
-    
-    
-    
-    def _get_nexthop_monitor_module():
-        for module_name in _NEXTHOP_MONITOR_MODULES:
-            module = sys.modules.get(module_name)
-            if module is not None:
-                return module
-        return None
-    
-    
-    def _patch_loaded_nexthop_monitor_modules():
-        for module_name in _NEXTHOP_MONITOR_MODULES:
-            nexthop_monitor = sys.modules.get(module_name)
-            if nexthop_monitor is None:
-                continue
-            nexthop_monitor._find_router_owning_address = _find_router_owning_address
-            nexthop_monitor._probe_gw_alive = _probe_gw_alive
-    
-    
-    def _resolve_backend_hostname(hostname=None):
-        if hostname is None:
-            hostname = os.environ.get("IPT_DNS_BACKEND_HOST", "garuda_pdns")
-        return socket.gethostbyname(hostname)
-    
-    
-    def _patch_loaded_ipt_server_main():
-        ipt_server_main = sys.modules.get("ipt_server.main")
-        if ipt_server_main is not None:
-            ipt_server_main.resolve_backend_hostname = _resolve_backend_hostname
-    
-    
-    _original_import = builtins.__import__
-    
-    
-    def _garuda_import_hook(name, globals=None, locals=None, fromlist=(), level=0):
-        module = _original_import(name, globals, locals, fromlist, level)
-        if name in _NEXTHOP_MONITOR_MODULES or name.startswith("ipt_server.tasks"):
-            _patch_loaded_nexthop_monitor_modules()
-        if name == "ipt_server.main" or name.startswith("ipt_server"):
-            _patch_loaded_ipt_server_main()
-        return module
-    
-    
-    builtins.__import__ = _garuda_import_hook
-    _patch_loaded_nexthop_monitor_modules()
-    _patch_loaded_ipt_server_main()
-    
-
----
 # Source: ipt-server/templates/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -244,7 +55,6 @@ spec:
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
-        garuda.runtime-patches/checksum: 78282f760c82668f528b0065b3a7edc260424c53ec159368ca7f325a35f84947
         garuda.env-config/checksum: 4201e1ff916d5e13744eadf86120ae48f2706c0f9a6ead84d3c8ebef3598bbf3
     spec:
       restartPolicy: Always
@@ -258,10 +68,6 @@ spec:
             value: "1"
           - name: net.ipv4.conf.all.rp_filter
             value: "2"
-      volumes:
-        - name: runtime-patches
-          configMap:
-            name: ipt-server-runtime-patches
       # PowerDNS hook.lua connects to the ipt-server WebSocket backend at
       # ws://127.0.0.1:8765/. Containers share the pod netns so loopback
       # is the correct address. No hostAliases needed.
@@ -283,13 +89,7 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
             failureThreshold: 10
-          volumeMounts:
-            - name: runtime-patches
-              mountPath: /runtime-patches
-              readOnly: true
           env:
-            - name: PYTHONPATH
-              value: /runtime-patches
             - name: IPT_DNS_BACKEND_HOST
               valueFrom:
                 fieldRef:

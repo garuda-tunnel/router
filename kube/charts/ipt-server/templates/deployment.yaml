@@ -20,7 +20,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        garuda.runtime-patches/checksum: {{ include (print $.Template.BasePath "/runtime-patches.yaml") . | sha256sum }}
         garuda.env-config/checksum: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -37,10 +36,6 @@ spec:
             value: "1"
           - name: net.ipv4.conf.all.rp_filter
             value: "2"
-      volumes:
-        - name: runtime-patches
-          configMap:
-            name: {{ .Values.name }}-runtime-patches
       # PowerDNS hook.lua connects to the ipt-server WebSocket backend at
       # ws://127.0.0.1:8765/. Containers share the pod netns so loopback
       # is the correct address. No hostAliases needed.
@@ -62,13 +57,7 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
             failureThreshold: 10
-          volumeMounts:
-            - name: runtime-patches
-              mountPath: /runtime-patches
-              readOnly: true
           env:
-            - name: PYTHONPATH
-              value: /runtime-patches
             - name: IPT_DNS_BACKEND_HOST
               valueFrom:
                 fieldRef:
