@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/garuda-tunnel/router-internal/compare/v1.2.4...v1.2.5) (2026-07-02)
+
+
+### Bug Fixes
+
+* **ipt-server:** remove stale runtime-patch shadow of egress nexthop resolver ([#35](https://github.com/garuda-tunnel/router-internal/issues/35)) ([dcb39ac](https://github.com/garuda-tunnel/router-internal/commit/dcb39ac5cc91394a2b83c3c320251b536bcfd3e6))
+
 ## [1.2.4](https://github.com/garuda-tunnel/router-internal/compare/v1.2.3...v1.2.4) (2026-07-02)
 
 
