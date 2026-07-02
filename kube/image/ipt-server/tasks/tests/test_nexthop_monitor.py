@@ -1003,3 +1003,159 @@ async def test_monitor_nexthops_loop_survives_a_hanging_tick():
         "monitor_nexthops loop did not recover from a hanging tick; the "
         "per-tick timeout must abandon it and keep ticking"
     )
+
+
+# ---------------------------------------------------------------------------
+# vpn2 STILL-BLACKHOLE (2026-07-02): the geo nexthop_monitor _tick must probe
+# EVERY member of EVERY group on EVERY tick, independent of startup
+# reachability, and recover a member that was dead at startup once its gw
+# becomes OSPF-resolvable. Border (directly-attached gw) resolves immediately;
+# de/pt (tunnel-IP gws) are unresolvable until OSPF converges. A tick that only
+# processes the startup-reachable subset leaves de/pt member nexthops blackhole
+# forever.
+# ---------------------------------------------------------------------------
+
+
+class TestTickIteratesEveryMemberEveryTick:
+    """_tick must probe all three members (de, pt, border) of a group."""
+
+    def test_first_tick_probes_every_member(self):
+        desc = _make_desc(
+            {"gw": "10.9.21.2"},   # de
+            {"gw": "10.9.19.2"},   # pt
+            {"gw": "10.130.30.50"},  # border
+        )
+        member_nhids = {
+            ("10.9.21.2", None): 1,
+            ("10.9.19.2", None): 2,
+            ("10.130.30.50", None): 3,
+        }
+        nhg_registry = {desc: 4}
+        probed: list[str] = []
+
+        def probe(gw):
+            probed.append(gw)
+            # border resolves; de/pt dead at startup (unconverged OSPF).
+            if gw == "10.130.30.50":
+                return (True, "172.30.0.116", "backbone")
+            return (False, None, None)
+
+        with (
+            patch("tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
+            patch("nexthop.replace_nexthop", MagicMock()),
+            patch("nexthop.replace_group", MagicMock()),
+            patch("nexthop.replace_nexthop_blackhole", MagicMock()),
+        ):
+            _tick(
+                nhg_registry,
+                member_nhids,
+                {},
+                {},
+                {},
+                first_tick=True,
+            )
+
+        assert {"10.9.21.2", "10.9.19.2", "10.130.30.50"} <= set(probed), (
+            "first_tick did not probe every member; probed only "
+            f"{sorted(set(probed))} — de/pt were dropped from the member "
+            "iteration (the vpn2 blackhole)"
+        )
+
+    def test_member_dead_at_startup_recovers_once_alive(self):
+        """de/pt dead on first_tick then alive on a later tick must be
+        installed (replace_nexthop) with their resolved backbone nexthop."""
+        desc = _make_desc(
+            {"gw": "10.9.21.2"},   # de
+            {"gw": "10.9.19.2"},   # pt
+            {"gw": "10.130.30.50"},  # border
+        )
+        member_nhids = {
+            ("10.9.21.2", None): 1,
+            ("10.9.19.2", None): 2,
+            ("10.130.30.50", None): 3,
+        }
+        nhg_registry = {desc: 4}
+        member_alive: dict = {}
+        active_member: dict = {}
+        consecutive_failures: dict = {}
+
+        converged = {"on": False}
+
+        def probe(gw):
+            if gw == "10.130.30.50":
+                return (True, "172.30.0.116", "backbone")
+            if not converged["on"]:
+                return (False, None, None)
+            via = "172.30.0.112" if gw == "10.9.21.2" else "172.30.0.110"
+            return (True, via, "backbone")
+
+        installed: list = []
+
+        def rec_nexthop(nhid, via, dev):
+            installed.append((nhid, via))
+
+        with (
+            patch("tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
+            patch("nexthop.replace_nexthop", side_effect=rec_nexthop),
+            patch("nexthop.replace_group", MagicMock()),
+            patch("nexthop.replace_nexthop_blackhole", MagicMock()),
+        ):
+            # first_tick: de/pt dead, border alive.
+            _tick(nhg_registry, member_nhids, member_alive, active_member,
+                  consecutive_failures, first_tick=True)
+            # Drive past the transient failure threshold while still dead.
+            for _ in range(_GW_FAILURE_THRESHOLD):
+                _tick(nhg_registry, member_nhids, member_alive, active_member,
+                      consecutive_failures, first_tick=False)
+            # OSPF converges; de/pt become resolvable.
+            converged["on"] = True
+            _tick(nhg_registry, member_nhids, member_alive, active_member,
+                  consecutive_failures, first_tick=False)
+
+        installed_nhids = {nhid for nhid, _ in installed}
+        assert 1 in installed_nhids, (
+            "de member (nhid=1) dead at startup never recovered once OSPF "
+            "converged; _tick must re-probe and install it"
+        )
+        assert 2 in installed_nhids, (
+            "pt member (nhid=2) dead at startup never recovered once OSPF "
+            "converged; _tick must re-probe and install it"
+        )
+
+    def test_tick_logs_group_members_and_each_member(self, caplog):
+        """Observability: _tick must emit a greppable line naming the full
+        member set per group and each member as iteration reaches it, so the
+        next vpn2 run can prove which members the loop actually probed."""
+        import logging as _l
+
+        desc = _make_desc(
+            {"gw": "10.9.21.2"},
+            {"gw": "10.9.19.2"},
+            {"gw": "10.130.30.50"},
+        )
+        member_nhids = {
+            ("10.9.21.2", None): 1,
+            ("10.9.19.2", None): 2,
+            ("10.130.30.50", None): 3,
+        }
+        nhg_registry = {desc: 4}
+
+        def probe(gw):
+            return (True, "172.30.0.116", "backbone")
+
+        with (
+            patch("tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
+            patch("nexthop.replace_nexthop", MagicMock()),
+            patch("nexthop.replace_group", MagicMock()),
+            patch("nexthop.replace_nexthop_blackhole", MagicMock()),
+            caplog.at_level(_l.INFO, logger="tasks.nexthop_monitor"),
+        ):
+            _tick(nhg_registry, member_nhids, {}, {}, {}, first_tick=True)
+
+        messages = [r.getMessage() for r in caplog.records]
+        joined = "\n".join(messages)
+        for gw in ("10.9.21.2", "10.9.19.2", "10.130.30.50"):
+            assert any(f"member gw={gw}" in m for m in messages), (
+                f"expected a per-member iteration line for gw={gw}; got:\n"
+                + joined
+            )

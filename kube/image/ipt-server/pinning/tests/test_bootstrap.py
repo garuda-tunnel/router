@@ -307,3 +307,172 @@ async def test_same_alive_different_nexthop_refires_update():
     assert "172.30.0.35" in nexthops and "172.30.0.99" in nexthops, (
         "loop keyed last_alive on alive alone and missed the nexthop change"
     )
+
+
+# ---------------------------------------------------------------------------
+# vpn2 STILL-BLACKHOLE (2026-07-02): the liveness loop MUST iterate EVERY
+# configured egress on EVERY tick, independent of startup reachability. de/pt
+# gws are tunnel IPs that are not OSPF-resolvable at process start (convergence
+# race); border's gw is directly-attached and resolves immediately. A loop that
+# only ever processes the reachable-at-startup subset (border) leaves 301/302
+# blackhole forever. These tests lock in: (a) every egress is probed every tick,
+# and (b) an egress dead at startup is recovered once its gw becomes resolvable.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_liveness_loop_probes_every_egress_every_tick():
+    """The loop must probe border AND de AND pt on the very first tick.
+
+    Regression for the vpn2 blackhole where only `border` (the first,
+    alphabetically-sorted, startup-reachable egress) was ever processed and
+    de/pt (tunnel-IP gws) were never probed/installed.
+    """
+    catalog = {
+        "border": MagicMock(gw="10.130.30.50", dev=None),
+        "de": MagicMock(gw="10.9.21.2", dev=None),
+        "pt": MagicMock(gw="10.9.19.2", dev=None),
+    }
+    probed: list[str] = []
+
+    def probe(target, interfaces):
+        probed.append(target.gw)
+        return (True, "172.30.0.116", "backbone")
+
+    reconciler = MagicMock()
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        return None
+
+    reconciler.update_egress_liveness = update
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.03)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe), \
+         patch.object(bootstrap, "LIVENESS_INTERVAL_SECONDS", 0.01):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            stopper(),
+        )
+
+    assert {"10.130.30.50", "10.9.21.2", "10.9.19.2"} <= set(probed), (
+        "liveness loop did not probe every configured egress; probed only "
+        f"{sorted(set(probed))} — de/pt were dropped from the per-egress "
+        "iteration (the vpn2 blackhole)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_liveness_loop_installs_egress_dead_at_startup_once_alive():
+    """An egress whose gw is unresolvable at startup must still be installed
+    once its gw becomes resolvable (OSPF convergence), because the loop
+    re-probes the FULL catalog every tick, not just the startup-reachable set.
+    """
+    catalog = {
+        "border": MagicMock(gw="10.130.30.50", dev=None),
+        "de": MagicMock(gw="10.9.21.2", dev=None),
+        "pt": MagicMock(gw="10.9.19.2", dev=None),
+    }
+    # border alive from tick 1; de/pt dead until the 3rd sweep (OSPF converges).
+    sweeps = {"n": 0}
+
+    def probe(target, interfaces):
+        if target.gw == "10.130.30.50":
+            return (True, "172.30.0.116", "backbone")
+        # de/pt: dead for the first couple of sweeps, then alive.
+        if sweeps["n"] < 2:
+            return (False, None, None)
+        via = "172.30.0.112" if target.gw == "10.9.21.2" else "172.30.0.110"
+        return (True, via, "backbone")
+
+    installed_alive: dict[str, bool] = {}
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        installed_alive[egress] = alive
+
+    reconciler = MagicMock()
+    reconciler.update_egress_liveness = update
+    stop = asyncio.Event()
+
+    async def sweeper():
+        # Let a few ticks pass with de/pt dead, then converge, then a couple
+        # more ticks so the recovery tick fires, then stop.
+        await asyncio.sleep(0.03)
+        sweeps["n"] = 2
+        await asyncio.sleep(0.03)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe), \
+         patch.object(bootstrap, "LIVENESS_INTERVAL_SECONDS", 0.01):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            sweeper(),
+        )
+
+    assert installed_alive.get("de") is True, (
+        "de was dead at startup and never recovered — the loop must re-probe "
+        "and install it once OSPF converges"
+    )
+    assert installed_alive.get("pt") is True, (
+        "pt was dead at startup and never recovered — the loop must re-probe "
+        "and install it once OSPF converges"
+    )
+
+
+@pytest.mark.asyncio
+async def test_liveness_loop_logs_full_catalog_at_entry_and_each_egress(caplog):
+    """Observability: the loop must emit a non-throttled, greppable line naming
+    the FULL catalog at loop entry and each egress as iteration reaches it.
+
+    This is the log evidence the vpn2 forensics needed: on the live run there
+    was no per-egress line for de/pt, so the operator could not tell whether
+    the iteration reached them. Loop-entry + per-egress lines make the reached
+    set unambiguous on the next run.
+    """
+    import logging as _l
+
+    catalog = {
+        "border": MagicMock(gw="10.130.30.50", dev=None),
+        "de": MagicMock(gw="10.9.21.2", dev=None),
+        "pt": MagicMock(gw="10.9.19.2", dev=None),
+    }
+
+    def probe(target, interfaces):
+        return (True, "172.30.0.116", "backbone")
+
+    reconciler = MagicMock()
+
+    async def update(*, egress, alive, nh_ip, nh_dev):
+        return None
+
+    reconciler.update_egress_liveness = update
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.03)
+        stop.set()
+
+    with patch.object(bootstrap, "probe_egress", side_effect=probe), \
+         patch.object(bootstrap, "LIVENESS_INTERVAL_SECONDS", 0.01), \
+         caplog.at_level(_l.INFO, logger="pinning.bootstrap"):
+        await asyncio.gather(
+            bootstrap._liveness_loop(reconciler, catalog, lambda: [], stop),
+            stopper(),
+        )
+
+    messages = [r.getMessage() for r in caplog.records]
+    joined = "\n".join(messages)
+    assert any("border" in m and "de" in m and "pt" in m for m in messages), (
+        "expected a loop-entry line naming the full catalog "
+        "(border, de, pt); got:\n" + joined
+    )
+    for egress in ("border", "de", "pt"):
+        assert any(
+            f"egress={egress}" in m for m in messages
+        ), (
+            f"expected a per-egress iteration line for {egress!r}; got:\n"
+            + joined
+        )

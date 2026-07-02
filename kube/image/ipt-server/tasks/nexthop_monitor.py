@@ -346,8 +346,28 @@ def _tick(
         new_alive: dict[tuple, bool] = {}
         probe_results: dict[tuple, tuple] = {}  # key -> (via, dev) for gw members
 
+        # Observability (vpn2 STILL-BLACKHOLE, 2026-07-02): name the full member
+        # set of this group once per tick so the reached set is unambiguous in
+        # the pod logs. On the live run there was no per-member line for de/pt,
+        # so the operator could not confirm whether the iteration reached them.
+        logger.info(
+            "nexthop tick group nhid=%d members=%s",
+            group_nhid,
+            [(m.gw, m.dev) for m in desc.members],
+        )
+
         for member in desc.members:
             key = (member.gw, member.dev)
+
+            # Non-throttled per-member iteration marker: proves the loop reached
+            # this member on this tick (the vpn2 blackhole left de/pt with NO
+            # per-member line at all). One line per member per tick.
+            logger.info(
+                "nexthop tick reached member gw=%s dev=%s (group nhid=%d)",
+                member.gw,
+                member.dev,
+                group_nhid,
+            )
 
             if member.gw is not None:
                 alive, resolved_gw, resolved_dev = _probe_gw_alive(member.gw)

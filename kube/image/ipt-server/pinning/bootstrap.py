@@ -99,8 +99,29 @@ async def _liveness_loop(reconciler, catalog, interfaces_view, stop_event):
     # then suppress repeats — the retry itself is never suppressed (Fix B).
     last_logged_failure: dict[str, object] = {}
 
+    # Observability (vpn2 STILL-BLACKHOLE, 2026-07-02): name the FULL catalog
+    # once at loop entry so the reached set is unambiguous in the pod logs.
+    # Without this, the live forensics could only INFER (from the absence of a
+    # probe DEBUG line) that de/pt were skipped — never confirm the iterated
+    # set. This line is emitted exactly once, at loop start.
+    log.info(
+        "pinning liveness loop iterating catalog: %s",
+        ", ".join(sorted(catalog.keys())) or "(empty)",
+    )
+
     async def _tick() -> None:
         for egress, target in catalog.items():
+            # Non-throttled per-egress iteration marker: proves the loop
+            # actually reached this egress on this tick (the vpn2 blackhole
+            # left de/pt with NO per-egress line at all). Kept at INFO because
+            # a silent per-egress drop is precisely the failure we must be able
+            # to see; it is one line per egress per tick.
+            log.info(
+                "pinning liveness tick reached egress=%s gw=%s dev=%s",
+                egress,
+                getattr(target, "gw", None),
+                getattr(target, "dev", None),
+            )
             outcome = None  # bound before to_thread so the throttle key is robust
             try:
                 alive, nh_ip, nh_dev = await asyncio.to_thread(
