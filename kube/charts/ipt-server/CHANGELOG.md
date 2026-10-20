@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/garuda-tunnel/router-internal/compare/v1.3.0...v1.3.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ipt-server:** release static-route TTL fix ([#61](https://github.com/garuda-tunnel/router-internal/issues/61)) ([#63](https://github.com/garuda-tunnel/router-internal/issues/63)) ([ed8c78d](https://github.com/garuda-tunnel/router-internal/commit/ed8c78d2b0b1c4dfc48e23a7d75341a3c930977e))
+
 ## [1.3.0](https://github.com/garuda-tunnel/router-internal/compare/v1.2.9...v1.3.0) (2026-10-20)
 
 
