@@ -19,6 +19,7 @@ RTPROT_STATIC = 4
 STATIC_PROTO = RTPROT_STATIC
 STATIC_METRIC = 100
 DNS_PROTO = 250  # DNS-learned route class; `ip route` shows "proto 250"
+DNS_PROTO_NAME = "garuda-dns"  # iproute2 rt_protos name for DNS_PROTO
 DNS_METRIC = 200
 
 

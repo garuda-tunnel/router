@@ -19,6 +19,7 @@ include = [
     "lib.py",
     "nexthop.py",
     "route.py",
+    "rt_protos.py",
     "route_config.py",
     "route_health.py",
     "ipdb/*.py",

@@ -30,6 +30,7 @@ import nftables
 
 from Config import MySettings
 from Router import Router
+import rt_protos
 from route_health import FrrVtyshOspfHealthSource
 from ipdb.query import IPDatabase
 
@@ -374,6 +375,8 @@ def build_route_health_source(config: MySettings):
 def main():
     state.CONFIG = MySettings()
     logger.debug("Loading config")
+    # Cosmetic: names for our proto numbers in `ip route` output; fails soft.
+    rt_protos.write_rt_protos()
     startup_apply_network_state()
     state.ROUTER = Router(state.CONFIG, ipdb=IPDB)
 

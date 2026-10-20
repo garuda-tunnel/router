@@ -38,6 +38,7 @@ from pinning.nft_renderer import PIN_MARK_BASE, NftRenderer
 log = logging.getLogger(__name__)
 
 PINNING_PROTO: int = 201
+PINNING_PROTO_NAME: str = "garuda-pin"  # iproute2 rt_protos name for PINNING_PROTO
 PINNING_TABLE_BASE: int = 300
 PINNING_RULE_PRIORITY: int = 100
 
