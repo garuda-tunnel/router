@@ -2,15 +2,14 @@
 
 import asyncio
 import unittest
-from unittest.mock import patch, PropertyMock, MagicMock
+from unittest.mock import patch, MagicMock
 from Config import MySettings
 
 
 class TestMonitorRouteHealth(unittest.IsolatedAsyncioTestCase):
     """Tests for ipt_server.monitor_route_health async function."""
 
-    def _make_config_with_health(self, mock_interfaces):
-        mock_interfaces.return_value = {"eth0": [(1, 0)]}
+    def _make_config_with_health(self):
         return MySettings(
             table=200,
             ws_port=8080,
@@ -30,13 +29,12 @@ class TestMonitorRouteHealth(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    @patch("route.RouteObject.interfaces", new_callable=PropertyMock)
-    async def test_unhealthy_to_healthy_calls_replay(self, mock_interfaces):
+    async def test_unhealthy_to_healthy_calls_replay(self):
         """Health transition unhealthy->healthy calls replay_routes_for_interface."""
         import ipt_server.state
         import ipt_server.main
 
-        config = self._make_config_with_health(mock_interfaces)
+        config = self._make_config_with_health()
 
         mock_router = MagicMock()
         mock_health_source = MagicMock()
@@ -71,13 +69,12 @@ class TestMonitorRouteHealth(unittest.IsolatedAsyncioTestCase):
         mock_router.replay_routes_for_interface.assert_called_once_with("wg_uk")
         mock_router.remove_routes_for_interface.assert_not_called()
 
-    @patch("route.RouteObject.interfaces", new_callable=PropertyMock)
-    async def test_healthy_to_unhealthy_calls_remove(self, mock_interfaces):
+    async def test_healthy_to_unhealthy_calls_remove(self):
         """Health transition healthy->unhealthy calls remove_routes_for_interface."""
         import ipt_server.state
         import ipt_server.main
 
-        config = self._make_config_with_health(mock_interfaces)
+        config = self._make_config_with_health()
 
         mock_router = MagicMock()
         mock_health_source = MagicMock()
@@ -112,13 +109,12 @@ class TestMonitorRouteHealth(unittest.IsolatedAsyncioTestCase):
         mock_router.remove_routes_for_interface.assert_called_once_with("wg_uk")
         mock_router.replay_routes_for_interface.assert_not_called()
 
-    @patch("route.RouteObject.interfaces", new_callable=PropertyMock)
-    async def test_stable_healthy_state_calls_no_route_methods(self, mock_interfaces):
+    async def test_stable_healthy_state_calls_no_route_methods(self):
         """Stable healthy->healthy state does NOT call replay or remove."""
         import ipt_server.state
         import ipt_server.main
 
-        config = self._make_config_with_health(mock_interfaces)
+        config = self._make_config_with_health()
 
         mock_router = MagicMock()
         mock_health_source = MagicMock()
@@ -153,8 +149,7 @@ class TestMonitorRouteHealth(unittest.IsolatedAsyncioTestCase):
         mock_router.replay_routes_for_interface.assert_not_called()
         mock_router.remove_routes_for_interface.assert_not_called()
 
-    @patch("route.RouteObject.interfaces", new_callable=PropertyMock)
-    async def test_none_source_returns_immediately(self, mock_interfaces):
+    async def test_none_source_returns_immediately(self):
         """monitor_route_health with None source returns without doing anything."""
         import ipt_server.state
         import ipt_server.main

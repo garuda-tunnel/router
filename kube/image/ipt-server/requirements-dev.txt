@@ -1,0 +1,13 @@
+# Test-only dependencies (pytest toolchain required by
+# GFN-CIS/coding-agent-public-rules specific/python.md).
+# The production image installs requirements.txt only — never this file.
+#
+# Install (from this directory):
+#   python -m pip install -r requirements.txt -r requirements-dev.txt
+pytest
+pytest-cov
+pytest-asyncio
+pytest-aiohttp
+# duplicate-test detection and mutation testing (see readme.md "Tests")
+pytest-deduplicate
+mutmut

@@ -18,7 +18,7 @@ def test_model_construction_does_not_touch_ipdb():
 def test_from_country_populates_subnets_via_ipdb():
     """from_country factory must call ipdb[country] and populate subnets."""
     fake_ipdb = MagicMock()
-    fake_ipdb.__getitem__.return_value = ["1.2.3.0/24", "5.6.7.0/24"]
+    fake_ipdb.__getitem__.return_value = ["192.0.2.0/24", "198.51.100.0/24"]
 
     route = CountryRoute.from_country(
         ipdb=fake_ipdb,
@@ -28,5 +28,5 @@ def test_from_country_populates_subnets_via_ipdb():
 
     fake_ipdb.__getitem__.assert_called_once_with("US")
     subnet_strings = [str(r.net) for r in route.routes]
-    assert "1.2.3.0/24" in subnet_strings
-    assert "5.6.7.0/24" in subnet_strings
+    assert "192.0.2.0/24" in subnet_strings
+    assert "198.51.100.0/24" in subnet_strings

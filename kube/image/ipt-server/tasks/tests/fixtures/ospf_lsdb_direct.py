@@ -1,6 +1,6 @@
 """Realistic OSPF LSDB / RIB JSON fixtures for nexthop_monitor tests.
 
-These mirror the REAL vpn2 hub-and-spoke topology: two egress edges (pt-edge
+These mirror the reference lab hub-and-spoke topology: two egress edges (pt-edge
 10.130.30.23 owning gw 10.9.19.2, de-edge 10.130.30.33 owning gw 10.9.21.2),
 each reached over a hub↔edge P2P WireGuard tunnel via its HUB-SIDE wg pod
 (pt-hub 10.130.30.20, de-hub 10.130.30.30). The hub ipt_server (10.130.30.99)
@@ -12,7 +12,7 @@ the de-hub pod LSA (10.130.30.30) and keyed the EDGE router-ids as direct
 neighbors. That mis-modelled hub-and-spoke and is exactly why the rolled-back
 1.2.6 direct-neighbor-Full gate passed review while regressing live. The fixture
 now carries BOTH the edge LSA and its hub-side pod LSA with a reciprocal P2P
-link, matching the live capture in ospf_hubspoke_vpn2.py.
+link, matching the capture in ospf_hubspoke.py.
 """
 from __future__ import annotations
 

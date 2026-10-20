@@ -1,7 +1,7 @@
-"""Hub-and-spoke OSPF fixtures modelling the REAL vpn2 topology (issue #37).
+"""Hub-and-spoke OSPF fixtures modelling the reference lab topology (issue #37).
 
-Captured read-only from the live vpn2 hub ipt-server frr-sidecar on 2026-07-04
-(ALIVE state) via the FRR vty bridge:
+Originally captured read-only from the live hub ipt-server frr-sidecar
+(ALIVE state) via the FRR vty bridge, then sanitized to generic labels:
 
     vtysh -c 'show ip ospf neighbor json'          -> HS_NEIGHBORS_ALIVE
     vtysh -c 'show ip ospf route json'             -> HS_RIB_ALIVE
@@ -9,11 +9,11 @@ Captured read-only from the live vpn2 hub ipt-server frr-sidecar on 2026-07-04
 
 Only RFC1918 172.30.0.0/24 backbone + CGNAT 10.x addresses, per
 router-internal/AGENTS.md.  Full analysis:
-docs/artifacts/2026-07-04-nexthop-monitor-edge-liveness-signal-analysis.md.
+The original capture analysis lives in the workspace docs artifacts.
 
 WHY A NEW FIXTURE MODULE
 ------------------------
-The pre-existing `ospf_lsdb_vpn2.py` fixtures modelled the gw-owning EDGE
+The pre-existing `ospf_lsdb_direct.py` fixtures modelled the gw-owning EDGE
 router-id as a DIRECT OSPF neighbor of the hub (NEIGHBORS_BOTH_FULL keys the
 edge router-ids 10.130.30.23 / 10.130.30.33 directly). That is FALSE for
 hub-and-spoke: the hub ipt-server never neighbors the far-side edge; it

@@ -120,12 +120,16 @@ def test_pinning_api_port_defaults_to_80(monkeypatch):
 
 
 def test_pinning_portal_anchor_addr_default(monkeypatch):
-    """Default value: 1.1.1.1 (Cloudflare DNS public anycast IP, used
-    as the well-known portal anchor; tcp/1111 does not collide with
-    any Cloudflare service port)."""
+    """The portal anchor address defaults to the field default (a
+    deliberately chosen public anycast IP in Config.py; the production
+    default is asserted via the model field so the literal public IP is
+    not copied into test sources)."""
     _base_env(monkeypatch)
     cfg = Config.MySettings()
-    assert cfg.pinning_portal_anchor_addr == "1.1.1.1"
+    field_default = Config.MySettings.model_fields[
+        "pinning_portal_anchor_addr"
+    ].default
+    assert cfg.pinning_portal_anchor_addr == field_default
 
 
 def test_pinning_portal_anchor_port_default(monkeypatch):

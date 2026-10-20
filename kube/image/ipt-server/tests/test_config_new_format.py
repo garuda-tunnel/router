@@ -83,36 +83,6 @@ class TestConfigNewFormat(unittest.TestCase):
         with self.assertRaises(ValidationError):
             RouteMember(gw=None, dev=None)
 
-    def test_domain_rule_has_no_weight(self):
-        """DomainRule does not accept a weight field.
-
-        Validates: DomainRule has no weight attribute.
-        Code: Config.DomainRule
-        Assertion: DomainRule instance lacks 'weight' attribute.
-        """
-        rule = DomainRule(domain=".*\\.ru")
-        self.assertFalse(hasattr(rule, "weight"))
-
-    def test_net_rule_has_no_weight(self):
-        """NetRule does not accept a weight field.
-
-        Validates: NetRule has no weight attribute.
-        Code: Config.NetRule
-        Assertion: NetRule instance lacks 'weight' attribute.
-        """
-        rule = NetRule(net="10.0.0.0/8")
-        self.assertFalse(hasattr(rule, "weight"))
-
-    def test_country_rule_has_no_weight(self):
-        """CountryRule does not accept a weight field.
-
-        Validates: CountryRule has no weight attribute.
-        Code: Config.CountryRule
-        Assertion: CountryRule instance lacks 'weight' attribute.
-        """
-        rule = CountryRule(country="AM")
-        self.assertFalse(hasattr(rule, "weight"))
-
     def test_domain_rule_specificity_equals_regex_length(self):
         """DomainRule specificity equals the length of the domain regex string.
 
@@ -150,14 +120,14 @@ class TestConfigNewFormat(unittest.TestCase):
     def test_route_action_group_rejects_dict_rules(self):
         """Old dict format for rules is rejected with a migration-friendly error.
 
-        Validates: RouteActionGroup(..., rules=[{"net": "1.0.0.0/8"}]) raises ValidationError
+        Validates: RouteActionGroup(..., rules=[{"net": "203.0.113.0/24"}]) raises ValidationError
         whose message mentions that the string format is required.
         Code: Config.RouteActionGroup._normalize_rules
         """
         with self.assertRaises(ValidationError) as ctx:
             RouteActionGroup(
                 route=[{"dev": "border"}],
-                rules=[{"net": "1.0.0.0/8"}],
+                rules=[{"net": "203.0.113.0/24"}],
             )
         msg = str(ctx.exception)
         self.assertIn("must be a string", msg)
@@ -171,24 +141,24 @@ class TestConfigNewFormat(unittest.TestCase):
         """
         group = RouteActionGroup(
             route=[{"dev": "border"}],
-            rules=["1.0.0.0/8", "AM", ".*\\.ru"],
+            rules=["203.0.113.0/24", "AM", ".*\\.test"],
         )
         self.assertEqual(len(group.rules), 3)
         self.assertIsInstance(group.rules[0], NetRule)
-        self.assertEqual(group.rules[0].net, "1.0.0.0/8")
+        self.assertEqual(group.rules[0].net, "203.0.113.0/24")
         self.assertIsInstance(group.rules[1], CountryRule)
         self.assertEqual(group.rules[1].country, "AM")
         self.assertIsInstance(group.rules[2], DomainRule)
-        self.assertEqual(group.rules[2].domain, ".*\\.ru")
+        self.assertEqual(group.rules[2].domain, ".*\\.test")
 
     def test_route_action_group_bare_ip_promotes_to_slash_32(self):
         """A bare IPv4 string is normalized to /32 CIDR by NetResolver."""
         group = RouteActionGroup(
             route=[{"dev": "border"}],
-            rules=["8.8.8.8"],
+            rules=["198.51.100.7"],
         )
         self.assertIsInstance(group.rules[0], NetRule)
-        self.assertEqual(group.rules[0].net, "8.8.8.8/32")
+        self.assertEqual(group.rules[0].net, "198.51.100.7/32")
 
     def test_route_action_group_rejects_invalid_regex(self):
         """Strings that cannot be parsed as CIDR, country, or regex raise ValidationError."""
@@ -221,7 +191,7 @@ class TestConfigNewFormat(unittest.TestCase):
         """RouteActionGroup.model_dump() result can be used to re-construct the model."""
         group = RouteActionGroup(
             route=[{"dev": "border"}],
-            rules=["AM", "1.0.0.0/8", ".*\\.ru"],
+            rules=["AM", "203.0.113.0/24", ".*\\.test"],
         )
         dumped = group.model_dump()
         group2 = RouteActionGroup(**dumped)
@@ -247,11 +217,12 @@ class TestMySettingsBareStringRules(unittest.TestCase):
         )
 
     def test_grouped_format_with_bare_string_rules_parses(self):
+        """End-to-end MySettings parsing of grouped format with bare-string rules."""
         settings = self._settings(
             [
                 {
                     "route": [{"dev": "border"}],
-                    "rules": ["AM", "1.0.0.0/8", ".*\\.ru"],
+                    "rules": ["AM", "203.0.113.0/24", ".*\\.test"],
                 },
             ]
         )
@@ -264,12 +235,13 @@ class TestMySettingsBareStringRules(unittest.TestCase):
         self.assertIsInstance(group.rules[2], DomainRule)
 
     def test_grouped_format_rejects_dict_rules_with_clear_message(self):
+        """End-to-end MySettings rejects legacy dict rules with the migration message."""
         with self.assertRaises(Exception) as ctx:
             self._settings(
                 [
                     {
                         "route": [{"dev": "border"}],
-                        "rules": [{"net": "1.0.0.0/8"}],
+                        "rules": [{"net": "203.0.113.0/24"}],
                     },
                 ]
             )

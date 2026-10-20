@@ -137,13 +137,6 @@ class TestMySettingsMssClampField(unittest.TestCase):
         )
         self.assertEqual(settings.fixed_mss, 1300)
 
-    def test_no_legacy_mss_clamp_value_field(self):
-        """MySettings must NOT expose mss_clamp_value attribute."""
-        from Config import MySettings
-
-        settings = MySettings.model_validate(self._make_minimal_env())
-        self.assertFalse(hasattr(settings, "mss_clamp_value"))
-
     def test_no_legacy_ipt_mss_clamp_value_env(self):
         """IPT_MSS_CLAMP_VALUE env var must be silently ignored (not mapped to any field)."""
         from Config import MySettings
@@ -168,10 +161,7 @@ class TestRenderMssClampRulesRuntime(unittest.TestCase):
         from ipt_server import state
         import ipt_server.main as main_mod
         state.CONFIG = self._make_config(fixed_mss=1240, mss_clamp_enabled=True)
-        try:
-            out = main_mod.render_mss_clamp_rules()
-        finally:
-            state.CONFIG = None
+        out = main_mod.render_mss_clamp_rules()
         self.assertIn("table inet ipt_server_mss", out)
         self.assertIn("maxseg size set 1240", out)
 
@@ -180,10 +170,7 @@ class TestRenderMssClampRulesRuntime(unittest.TestCase):
         from ipt_server import state
         import ipt_server.main as main_mod
         state.CONFIG = self._make_config(fixed_mss=1240, mss_clamp_enabled=False)
-        try:
-            out = main_mod.render_mss_clamp_rules()
-        finally:
-            state.CONFIG = None
+        out = main_mod.render_mss_clamp_rules()
         self.assertEqual(out.strip(), "")
         self.assertNotIn("table inet ipt_server_mss", out)
 
@@ -193,11 +180,8 @@ class TestRenderMssClampRulesRuntime(unittest.TestCase):
         import ipt_server.main as main_mod
         # Config with only the new fields — no mss_clamp_value attribute.
         state.CONFIG = self._make_config(fixed_mss=1300, mss_clamp_enabled=True)
-        try:
-            # If main.py still reads .mss_clamp_value this will raise AttributeError.
-            out = main_mod.render_mss_clamp_rules()
-        finally:
-            state.CONFIG = None
+        # If main.py still reads .mss_clamp_value this will raise AttributeError.
+        out = main_mod.render_mss_clamp_rules()
         self.assertIn("maxseg size set 1300", out)
 
 

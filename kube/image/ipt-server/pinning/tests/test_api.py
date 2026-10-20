@@ -36,12 +36,14 @@ async def cli(aiohttp_client, manager, reconciler, catalog):
 
 
 async def test_egresses_endpoint_returns_sorted_keys(cli):
+    """GET /api/egresses lists the catalog keys sorted."""
     resp = await cli.get("/api/egresses")
     body = await resp.json()
     assert body == {"egresses": ["outer-de", "outer-pt"]}
 
 
 async def test_get_pin_unpinned_returns_null_egress(cli, manager):
+    """GET /api/pin for an unpinned source returns egress null."""
     manager.get.return_value = None
     resp = await cli.get("/api/pin")
     body = await resp.json()
@@ -76,6 +78,7 @@ async def test_set_pin_calls_manager_then_reconciles_snapshot(
 async def test_set_pin_unknown_egress_returns_400_no_kernel_call(
     cli, manager, reconciler
 ):
+    """Setting an unknown egress returns 400 without touching manager or kernel."""
     resp = await cli.get("/api/pin/set?egress=ghost")
     assert resp.status == 400
     manager.set.assert_not_awaited()
@@ -83,11 +86,13 @@ async def test_set_pin_unknown_egress_returns_400_no_kernel_call(
 
 
 async def test_set_pin_missing_egress_query_returns_400(cli):
+    """Missing egress query parameter returns 400."""
     resp = await cli.get("/api/pin/set")
     assert resp.status == 400
 
 
 async def test_clear_pin_calls_manager_then_reconciles(cli, manager, reconciler):
+    """Clear removes the pin then reconciles the (empty) snapshot."""
     manager.snapshot.return_value = {}
     resp = await cli.get("/api/pin/clear")
     assert resp.status == 200
@@ -151,6 +156,7 @@ async def test_clear_pin_flushes_conntrack_for_caller_saddr(
 
 
 async def test_set_pin_html_toggle_redirects(cli, manager):
+    """return=html redirects to / for the browser toggle UI."""
     manager.snapshot.return_value = {}
     resp = await cli.get(
         "/api/pin/set?egress=outer-pt&return=html",

@@ -1,8 +1,15 @@
+"""Render tests for the nftables templates used by ipt_server.main.
+
+The rendered nft ruleset text is the kernel-boundary contract; these
+tests assert on it directly (see tests/README.md).
+"""
+
 from unittest.mock import patch
 from ipt_server import main as ipt_main
 
 
 def test_dns_dnat_template_renders_with_backend_ip():
+    """The DNAT ruleset targets the given backend IP on port 1053 and SNATs replies to it."""
     rendered = ipt_main._render_dns_dnat_ruleset("10.0.0.5")
     assert "dnat to 10.0.0.5:1053" in rendered
     assert "ip daddr 10.0.0.5 udp dport 1053 masquerade" in rendered
@@ -32,12 +39,14 @@ def test_dns_dnat_short_circuits_on_pin_bit():
 
 
 def test_border_template_empty_when_no_border():
+    """Without a border NIC the masquerade table renders as empty string."""
     with patch.object(ipt_main.state, "CONFIG") as cfg:
         cfg.has_border = False
         assert ipt_main.render_border_rules() == ""
 
 
 def test_border_template_includes_private_returns_when_has_border():
+    """With a border NIC, private ranges bypass masquerade and border egress is masqueraded."""
     with patch.object(ipt_main.state, "CONFIG") as cfg:
         cfg.has_border = True
         rendered = ipt_main.render_border_rules()

@@ -54,5 +54,42 @@ class TestLogging(unittest.TestCase):
                 os.environ["LOGLEVEL"] = original_loglevel_env
 
 
+class TestLoggingWithExistingHandlers(unittest.TestCase):
+    def test_reload_upgrades_restricted_root_level(self):
+        """With handlers already configured, a reload still loosens a root
+        level more restrictive than the requested LOGLEVEL."""
+
+        def run_with(level_name, initial_level, expected):
+            import importlib
+
+            import ipt_server.main as ipt_main
+
+            root = logging.getLogger()
+            original_level = root.level
+            original_handlers = root.handlers[:]
+            original_env = os.environ.pop("LOGLEVEL", None)
+            try:
+                for handler in original_handlers:
+                    root.removeHandler(handler)
+                if not root.handlers:
+                    root.addHandler(logging.NullHandler())
+                root.setLevel(initial_level)
+                os.environ["LOGLEVEL"] = level_name
+                importlib.reload(ipt_main)
+                self.assertEqual(root.level, expected)
+            finally:
+                for handler in root.handlers[:]:
+                    root.removeHandler(handler)
+                for handler in original_handlers:
+                    root.addHandler(handler)
+                root.setLevel(original_level)
+                if original_env is not None:
+                    os.environ["LOGLEVEL"] = original_env
+                else:
+                    os.environ.pop("LOGLEVEL", None)
+
+        run_with("DEBUG", logging.WARNING, logging.DEBUG)
+
+
 if __name__ == "__main__":
     unittest.main()

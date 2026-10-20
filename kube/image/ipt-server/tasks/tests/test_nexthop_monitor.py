@@ -453,7 +453,7 @@ def test_monitor_stable_state_noop():
 # ---------------------------------------------------------------------------
 
 from tasks.nexthop_monitor import _find_router_owning_address
-from tasks.tests.fixtures.ospf_lsdb_vpn2 import (
+from tasks.tests.fixtures.ospf_lsdb_direct import (
     ROUTER_LSDB_TWO_OUTERS,
     ROUTER_LSDB_DE_DEAD,
     NEIGHBORS_BOTH_FULL,
@@ -468,18 +468,21 @@ class TestFindRouterOwningAddress:
     """
 
     def test_finds_outer_pt_for_10_9_19_2(self):
+        """The LPM lookup maps the pt gateway to its owning edge router-id."""
         router_id = _find_router_owning_address(
             "10.9.19.2", ROUTER_LSDB_TWO_OUTERS
         )
         assert router_id == "10.130.30.23"
 
     def test_finds_outer_de_for_10_9_21_2(self):
+        """The LPM lookup maps the de gateway to its owning edge router-id."""
         router_id = _find_router_owning_address(
             "10.9.21.2", ROUTER_LSDB_TWO_OUTERS
         )
         assert router_id == "10.130.30.33"
 
     def test_finds_router_from_stub_network_containing_gateway(self):
+        """A gateway inside an advertised stub network resolves to that network's originator."""
         lsdb = {
             "routerLinkStates": {
                 "areas": {
@@ -511,15 +514,18 @@ class TestFindRouterOwningAddress:
         assert router_id == "10.130.30.20"
 
     def test_returns_none_when_address_is_not_in_any_lsa(self):
+        """An address covered by no LSA resolves to no router."""
         assert _find_router_owning_address(
             "192.0.2.99", ROUTER_LSDB_TWO_OUTERS
         ) is None
 
     def test_returns_none_when_lsdb_is_empty(self):
+        """An empty LSDB resolves to no router."""
         empty = {"routerLinkStates": {"areas": {}}}
         assert _find_router_owning_address("10.9.19.2", empty) is None
 
     def test_returns_none_when_lsdb_structure_is_malformed(self):
+        """A malformed LSDB resolves to no router instead of raising."""
         assert _find_router_owning_address("10.9.19.2", {}) is None
         assert _find_router_owning_address("10.9.19.2", None) is None
 
@@ -544,7 +550,7 @@ class TestFindRouterOwningAddress:
 # ---------------------------------------------------------------------------
 
 from tasks.nexthop_monitor import _router_originates_default
-from tasks.tests.fixtures.ospf_lsdb_vpn2 import (
+from tasks.tests.fixtures.ospf_lsdb_direct import (
     EXTERNAL_LSDB_BOTH_DEFAULTS,
     EXTERNAL_LSDB_ONLY_PT,
     EXTERNAL_LSDB_NONE,
@@ -558,21 +564,25 @@ class TestRouterOriginatesDefault:
     """
 
     def test_true_when_outer_pt_originates_in_both_defaults_fixture(self):
+        """A router originating an external default LSA counts as default originator."""
         assert _router_originates_default(
             "10.130.30.23", EXTERNAL_LSDB_BOTH_DEFAULTS
         ) is True
 
     def test_true_when_outer_de_originates_in_both_defaults_fixture(self):
+        """Both edges originating defaults are each recognized."""
         assert _router_originates_default(
             "10.130.30.33", EXTERNAL_LSDB_BOTH_DEFAULTS
         ) is True
 
     def test_false_when_outer_de_does_not_originate_in_only_pt_fixture(self):
+        """A router absent from the external LSAs is not a default originator."""
         assert _router_originates_default(
             "10.130.30.33", EXTERNAL_LSDB_ONLY_PT
         ) is False
 
     def test_false_when_no_external_lsas_present(self):
+        """With no external LSAs nobody is a default originator."""
         assert _router_originates_default(
             "10.130.30.23", EXTERNAL_LSDB_NONE
         ) is False
@@ -586,6 +596,7 @@ class TestRouterOriginatesDefault:
         ) is False
 
     def test_false_on_malformed_lsdb(self):
+        """A malformed LSDB yields False, not an exception."""
         assert _router_originates_default("10.130.30.23", {}) is False
         assert _router_originates_default("10.130.30.23", None) is False
 
@@ -595,7 +606,7 @@ class TestRouterOriginatesDefault:
 # ---------------------------------------------------------------------------
 
 from tasks.nexthop_monitor import _resolve_router_nexthop
-from tasks.tests.fixtures.ospf_lsdb_vpn2 import (
+from tasks.tests.fixtures.ospf_lsdb_direct import (
     RIB_TWO_OUTERS,
     RIB_PT_GONE,
 )
@@ -607,25 +618,30 @@ class TestResolveRouterNexthop:
     """
 
     def test_resolves_outer_pt(self):
+        """The RIB nexthop for the pt edge resolves to the backbone transit address."""
         assert _resolve_router_nexthop(
             "10.130.30.23", RIB_TWO_OUTERS
         ) == ("172.30.0.3", "backbone")
 
     def test_resolves_outer_de(self):
+        """The RIB nexthop for the de edge resolves to the backbone transit address."""
         assert _resolve_router_nexthop(
             "10.130.30.33", RIB_TWO_OUTERS
         ) == ("172.30.0.4", "backbone")
 
     def test_returns_none_when_router_absent_from_rib(self):
+        """A router with no R-routes yields no nexthop."""
         assert _resolve_router_nexthop(
             "10.130.30.23", RIB_PT_GONE
         ) is None
 
     def test_returns_none_on_malformed_rib(self):
+        """A malformed RIB yields no nexthop instead of raising."""
         assert _resolve_router_nexthop("10.130.30.23", {}) is None
         assert _resolve_router_nexthop("10.130.30.23", None) is None
 
     def test_returns_none_when_route_has_no_nexthops(self):
+        """A RIB route without nexthops yields no nexthop."""
         rib = {"10.130.30.23": {"routeType": "R ", "nexthops": []}}
         assert _resolve_router_nexthop("10.130.30.23", rib) is None
 
@@ -654,6 +670,7 @@ class TestProbeGwAlive:
         return patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect)
 
     def test_outer_pt_alive_when_both_advertise_default(self):
+        """pt edge alive when both fixtures advertise it."""
         with self._patch_vtysh(
             ROUTER_LSDB_TWO_OUTERS,
             EXTERNAL_LSDB_BOTH_DEFAULTS,
@@ -665,6 +682,7 @@ class TestProbeGwAlive:
         assert dev == "backbone"
 
     def test_outer_de_alive_when_both_advertise_default(self):
+        """de edge alive when both fixtures advertise it."""
         with self._patch_vtysh(
             ROUTER_LSDB_TWO_OUTERS,
             EXTERNAL_LSDB_BOTH_DEFAULTS,
@@ -676,6 +694,7 @@ class TestProbeGwAlive:
         assert dev == "backbone"
 
     def test_outer_de_alive_via_direct_adjacency_even_when_not_default_originator(self):
+        """A Full reciprocal adjacency keeps an edge alive even without default origination."""
         # de (10.9.21.2, owned by 10.130.30.33) is a directly-adjacent OSPF
         # neighbour with a routable RIB entry (10.9.21.0/24 -> 172.30.0.4), so
         # it is reachable regardless of whether it originates a default route.
@@ -890,6 +909,7 @@ class TestProbeGwAlive:
         assert (via, dev) == (None, None)
 
     def test_unknown_gw_returns_false(self):
+        """Probing an unresolvable gw returns not-alive."""
         with self._patch_vtysh(
             ROUTER_LSDB_TWO_OUTERS,
             EXTERNAL_LSDB_BOTH_DEFAULTS,
@@ -899,6 +919,7 @@ class TestProbeGwAlive:
         assert alive is False
 
     def test_vty_bridge_failure_returns_false(self):
+        """A failing vty bridge probe returns not-alive instead of raising."""
         with patch("tasks.nexthop_monitor._vtysh", return_value=None):
             alive, via, dev = _probe_gw_alive("10.9.19.2")
         assert alive is False
@@ -910,8 +931,14 @@ class TestProbeGwAlive:
 # ---------------------------------------------------------------------------
 
 from tasks.nexthop_monitor import _resolve_direct_router_nexthop
-from tasks.tests.fixtures.vxxlcx_ospf import VXXLCX_ROUTER_LSDB, VXXLCX_RIB
-from tasks.tests.fixtures.vpn2_ospf_egress import VPN2_ROUTER_LSDB, VPN2_RIB
+from tasks.tests.fixtures.ospf_edge_standalone import (
+    EDGE_ROUTER_LSDB,
+    EDGE_RIB,
+)
+from tasks.tests.fixtures.ospf_egress_hub import (
+    HUB_EGRESS_ROUTER_LSDB,
+    HUB_EGRESS_RIB,
+)
 
 
 class TestResolveDirectRouterNexthopReturnsOspfRibNexthop:
@@ -919,37 +946,43 @@ class TestResolveDirectRouterNexthopReturnsOspfRibNexthop:
     owning router's own tunnel interface-address."""
 
     def test_returns_ospf_rib_nexthop_for_tunnel_edge_usa(self):
+        """usa tunnel gw resolves to its OSPF RIB nexthop (edge fixture)."""
         # usa edge router 10.130.30.23 advertises only tunnel IP 10.9.19.2;
         # OSPF RIB carries routable 172.30.0.35 for 10.9.19.0/28.
         assert _resolve_direct_router_nexthop(
-            "10.130.30.23", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+            "10.130.30.23", EDGE_ROUTER_LSDB, EDGE_RIB
         ) == ("172.30.0.35", "backbone")
 
     def test_returns_ospf_rib_nexthop_for_tunnel_edge_mexico(self):
+        """mexico tunnel gw resolves to its OSPF RIB nexthop (edge fixture)."""
         assert _resolve_direct_router_nexthop(
-            "10.130.30.33", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+            "10.130.30.33", EDGE_ROUTER_LSDB, EDGE_RIB
         ) == ("172.30.0.36", "backbone")
 
-    def test_returns_ospf_rib_nexthop_for_tunnel_edge_de_vpn2(self):
+    def test_returns_ospf_rib_nexthop_for_tunnel_edge_de(self):
+        """de tunnel gw resolves to its OSPF RIB nexthop (hub fixture)."""
         assert _resolve_direct_router_nexthop(
-            "10.130.30.33", VPN2_ROUTER_LSDB, VPN2_RIB
+            "10.130.30.33", HUB_EGRESS_ROUTER_LSDB, HUB_EGRESS_RIB
         ) == ("172.30.0.112", "backbone")
 
-    def test_returns_ospf_rib_nexthop_for_tunnel_edge_pt_vpn2(self):
+    def test_returns_ospf_rib_nexthop_for_tunnel_edge_pt(self):
+        """pt tunnel gw resolves to its OSPF RIB nexthop (hub fixture)."""
         assert _resolve_direct_router_nexthop(
-            "10.130.30.23", VPN2_ROUTER_LSDB, VPN2_RIB
+            "10.130.30.23", HUB_EGRESS_ROUTER_LSDB, HUB_EGRESS_RIB
         ) == ("172.30.0.110", "backbone")
 
-    def test_border_directly_attached_unchanged_vxxlcx(self):
+    def test_border_directly_attached_unchanged_edge_standalone(self):
+        """A directly-attached border gw is returned unchanged (edge fixture)."""
         # border 10.130.30.50 owns backbone iface 172.30.0.38; transit
         # 172.30.0.0/24 has nexthops[0].ip==" " -> guard falls back to iface addr.
         assert _resolve_direct_router_nexthop(
-            "10.130.30.50", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+            "10.130.30.50", EDGE_ROUTER_LSDB, EDGE_RIB
         ) == ("172.30.0.38", "backbone")
 
-    def test_border_directly_attached_unchanged_vpn2(self):
+    def test_border_directly_attached_unchanged_hub_egress(self):
+        """A directly-attached border gw is returned unchanged (hub fixture)."""
         assert _resolve_direct_router_nexthop(
-            "10.130.30.50", VPN2_ROUTER_LSDB, VPN2_RIB
+            "10.130.30.50", HUB_EGRESS_ROUTER_LSDB, HUB_EGRESS_RIB
         ) == ("172.30.0.116", "backbone")
 
 
@@ -958,8 +991,9 @@ class TestRegressionEgressBlackholeFieldSelectionBug:
     edge's own tunnel IP (kernel-rejected), now returns the OSPF-RIB nexthop."""
 
     def test_usa_no_longer_returns_tunnel_ip_10_9_19_2(self):
+        """The resolver must not return the queried tunnel IP itself as nexthop."""
         gw, dev = _resolve_direct_router_nexthop(
-            "10.130.30.23", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+            "10.130.30.23", EDGE_ROUTER_LSDB, EDGE_RIB
         )
         assert gw != "10.9.19.2", (
             "field-selection bug: resolver returned edge tunnel IP "
@@ -975,9 +1009,10 @@ class TestResolverLongestPrefixMatchAndSkipDefault:
     specific tunnel prefix in dict order (FRR JSON order is non-contractual)."""
 
     def test_broad_prefix_before_specific_still_picks_specific(self):
+        """LSA ordering does not matter: the most specific prefix wins."""
         # dict order deliberately puts the default and a broad /16 BEFORE the
         # specific /28 that carries the correct backbone nexthop for usa.
-        router_lsdb = VXXLCX_ROUTER_LSDB
+        router_lsdb = EDGE_ROUTER_LSDB
         rib = {
             "0.0.0.0/0": {"nexthops": [{"ip": "172.30.0.38", "via": "backbone"}]},
             "10.0.0.0/8": {"nexthops": [{"ip": "172.30.0.99", "via": "backbone"}]},
@@ -991,10 +1026,11 @@ class TestResolverLongestPrefixMatchAndSkipDefault:
         )
 
     def test_default_route_never_matched(self):
+        """The 0.0.0.0/0 default route is never used as a nexthop source."""
         # Only 0.0.0.0/0 present -> nothing to match -> None (never the default gw).
         rib = {"0.0.0.0/0": {"nexthops": [{"ip": "172.30.0.38", "via": "backbone"}]}}
         assert _resolve_direct_router_nexthop(
-            "10.130.30.23", VXXLCX_ROUTER_LSDB, rib
+            "10.130.30.23", EDGE_ROUTER_LSDB, rib
         ) is None
 
 
@@ -1003,6 +1039,7 @@ class TestResolverEcmpFirstUsableNexthop:
     first nexthop must not shadow a later routable one."""
 
     def test_blank_first_nexthop_skipped_for_later_usable(self):
+        """A blank first nexthop falls through to the next usable entry."""
         rib = {
             "10.9.19.0/28": {"nexthops": [
                 {"ip": " ", "directlyAttachedTo": "backbone"},   # blank first
@@ -1010,7 +1047,7 @@ class TestResolverEcmpFirstUsableNexthop:
             ]},
         }
         assert _resolve_direct_router_nexthop(
-            "10.130.30.23", VXXLCX_ROUTER_LSDB, rib
+            "10.130.30.23", EDGE_ROUTER_LSDB, rib
         ) == ("172.30.0.35", "backbone")
 
 
@@ -1019,6 +1056,7 @@ class TestResolverFallbackNeverTunnelIp:
     return an on-backbone address, never a tunnel-edge P2P IP."""
 
     def test_fallback_rejected_for_non_backbone_address(self):
+        """The fallback path rejects addresses outside the backbone subnets."""
         # A directly-attached route whose covering address is the tunnel IP
         # 10.9.19.2 must NOT be returned as a gateway (not on backbone).
         rib = {
@@ -1029,7 +1067,7 @@ class TestResolverFallbackNeverTunnelIp:
         # usa edge 10.130.30.23 only advertises 10.9.19.2 (a tunnel IP); with a
         # blank-.ip directly-attached route the fallback must refuse it -> None.
         assert _resolve_direct_router_nexthop(
-            "10.130.30.23", VXXLCX_ROUTER_LSDB, rib
+            "10.130.30.23", EDGE_ROUTER_LSDB, rib
         ) is None
 
 
@@ -1040,7 +1078,7 @@ class TestProbeGwAliveTunnelEdgeInstallable:
     # usa edge (owner 10.130.30.23) is reached via its HUB-SIDE pod
     # 10.130.30.20, which is the Full DIRECT OSPF neighbor of the hub (the edge
     # itself is two hops away and never a direct neighbor). Healthy egress =
-    # hub-side pod Full + reciprocal P2P adjacency present in VXXLCX_ROUTER_LSDB.
+    # hub-side pod Full + reciprocal P2P adjacency present in EDGE_ROUTER_LSDB.
     _NEIGHBORS_USA_FULL = {
         "neighbors": {
             "10.130.30.20": [
@@ -1063,15 +1101,17 @@ class TestProbeGwAliveTunnelEdgeInstallable:
         return patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect)
 
     def test_usa_probe_returns_installable_backbone_nexthop(self):
-        with self._patch_vtysh(VXXLCX_ROUTER_LSDB, VXXLCX_RIB):
+        """A full usa probe returns an installable backbone nexthop (live-incident regression)."""
+        with self._patch_vtysh(EDGE_ROUTER_LSDB, EDGE_RIB):
             alive, nh_ip, nh_dev = _probe_gw_alive("10.9.19.2")
         assert (alive, nh_ip, nh_dev) == (True, "172.30.0.35", "backbone")
 
 
 def test_probe_logs_branch_on_unknown_gw(caplog):
+    """The unknown-gw branch of the probe emits a diagnostic line."""
     import logging as _l
     with patch("tasks.nexthop_monitor._vtysh",
-               side_effect=lambda c: VXXLCX_ROUTER_LSDB if "database router" in c else VXXLCX_RIB):
+               side_effect=lambda c: EDGE_ROUTER_LSDB if "database router" in c else EDGE_RIB):
         with caplog.at_level(_l.DEBUG, logger="tasks.nexthop_monitor"):
             alive, _, _ = _probe_gw_alive("192.0.2.99")  # not owned by any router
     assert alive is False
@@ -1081,7 +1121,7 @@ def test_probe_logs_branch_on_unknown_gw(caplog):
 
 @pytest.mark.asyncio
 async def test_monitor_nexthops_loop_survives_a_tick_that_raises():
-    """Regression for the vpn2 blackhole: one exploding tick must NOT kill the
+    """Regression for a live blackhole incident: one exploding tick must NOT kill the
     monitor loop. The loop must call the tick again on the next iteration.
 
     Mirrors the live failure mode where nexthop_monitor stopped ticking after
@@ -1114,7 +1154,7 @@ async def test_monitor_nexthops_loop_survives_a_tick_that_raises():
     ):
         await asyncio.wait_for(
             monitor_nexthops({}, {}, stop),
-            timeout=2,
+            timeout=5.0,
         )
 
     assert calls["n"] >= 3, (
@@ -1124,16 +1164,26 @@ async def test_monitor_nexthops_loop_survives_a_tick_that_raises():
 
 
 @pytest.mark.asyncio
-async def test_monitor_nexthops_loop_survives_a_hanging_tick():
-    """A tick whose worker-thread body HANGS must not wedge the loop forever.
+async def test_monitor_nexthop_loop_survives_a_hanging_tick():
+    """A tick whose worker-thread body HANGS past the tick timeout must not
+    kill the loop: the timeout abandons it (logging why) and later ticks
+    still run.
 
     This is the mechanism the old `try/except Exception` could NOT defend
-    against (a hung to_thread(_tick) suspends the coroutine indefinitely with
-    no exception) and is the leading hypothesis for the live vpn2 stall. The
-    per-tick timeout in run_periodic bounds it so the loop keeps ticking.
+    against (a hung to_thread(_tick) suspends the coroutine with no
+    exception) and is the leading hypothesis for the live stall.
+
+    The injected fault — a worker thread blocked for longer than the
+    0.05s per-tick timeout — is inherently wall-clock (it IS the scenario
+    the production timeout bounds); it is bounded at 6x the timeout on a
+    gate. Everything else is event-synchronized: the driver proceeds on
+    the abandonment log record (a log handler, not elapsed time) and on
+    the stop event armed by tick 3. The wait_for timeouts are hang
+    guards.
     """
     import asyncio
-    import time
+    import logging
+    import threading
     from types import SimpleNamespace
 
     from ipt_server import state
@@ -1141,14 +1191,27 @@ async def test_monitor_nexthops_loop_survives_a_hanging_tick():
 
     calls = {"n": 0}
     stop = asyncio.Event()
+    entered = threading.Event()
+    gate = threading.Event()
+    loop_ref = [None]
+    timeout_logged = asyncio.Event()
+
+    class _TimeoutTripHandler(logging.Handler):
+        def emit(self, record):
+            if "exceeded tick_timeout" in record.getMessage():
+                if loop_ref[0] is not None:
+                    loop_ref[0].call_soon_threadsafe(timeout_logged.set)
+
+    trip = _TimeoutTripHandler()
+    logger_target = logging.getLogger("tasks.nexthop_monitor")
+    logger_target.addHandler(trip)
 
     def fake_tick(*_args, **_kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
-            # Block the worker thread well past the per-tick timeout (0.05s)
-            # but bounded so the worker frees promptly and does not linger
-            # past the test.
-            time.sleep(0.4)
+            entered.set()
+            # Fault: hold the worker thread 6x past the tick timeout.
+            gate.wait(timeout=0.3)
         if calls["n"] >= 3:
             stop.set()
 
@@ -1156,16 +1219,25 @@ async def test_monitor_nexthops_loop_survives_a_hanging_tick():
     loaded.set()
     fake_router = SimpleNamespace(_routes_loaded=loaded)
 
-    with (
-        patch.object(state, "ROUTER", fake_router),
-        patch("tasks.nexthop_monitor._tick", side_effect=fake_tick),
-        patch("tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
-        patch("tasks.nexthop_monitor._TICK_TIMEOUT_SECONDS", 0.05),
-    ):
-        await asyncio.wait_for(
-            monitor_nexthops({}, {}, stop),
-            timeout=2,
-        )
+    async def driver():
+        await asyncio.to_thread(entered.wait, 5.0)
+        await asyncio.wait_for(timeout_logged.wait(), timeout=5.0)
+        await asyncio.wait_for(stop.wait(), timeout=5.0)
+
+    try:
+        with (
+            patch.object(state, "ROUTER", fake_router),
+            patch("tasks.nexthop_monitor._tick", side_effect=fake_tick),
+            patch("tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
+            patch("tasks.nexthop_monitor._TICK_TIMEOUT_SECONDS", 0.05),
+        ):
+            loop_ref[0] = asyncio.get_running_loop()
+            await asyncio.wait_for(
+                asyncio.gather(monitor_nexthops({}, {}, stop), driver()),
+                timeout=10.0,
+            )
+    finally:
+        logger_target.removeHandler(trip)
 
     assert calls["n"] >= 3, (
         "monitor_nexthops loop did not recover from a hanging tick; the "
@@ -1174,7 +1246,7 @@ async def test_monitor_nexthops_loop_survives_a_hanging_tick():
 
 
 # ---------------------------------------------------------------------------
-# vpn2 STILL-BLACKHOLE (2026-07-02): the geo nexthop_monitor _tick must probe
+# STILL-BLACKHOLE incident (2026-07-02): the geo nexthop_monitor _tick must probe
 # EVERY member of EVERY group on EVERY tick, independent of startup
 # reachability, and recover a member that was dead at startup once its gw
 # becomes OSPF-resolvable. Border (directly-attached gw) resolves immediately;
@@ -1188,6 +1260,7 @@ class TestTickIteratesEveryMemberEveryTick:
     """_tick must probe all three members (de, pt, border) of a group."""
 
     def test_first_tick_probes_every_member(self):
+        """The first tick probes every member, not only the startup-reachable subset."""
         desc = _make_desc(
             {"gw": "10.9.21.2"},   # de
             {"gw": "10.9.19.2"},   # pt
@@ -1226,7 +1299,7 @@ class TestTickIteratesEveryMemberEveryTick:
         assert {"10.9.21.2", "10.9.19.2", "10.130.30.50"} <= set(probed), (
             "first_tick did not probe every member; probed only "
             f"{sorted(set(probed))} — de/pt were dropped from the member "
-            "iteration (the vpn2 blackhole)"
+            "iteration (the live blackhole)"
         )
 
     def test_member_dead_at_startup_recovers_once_alive(self):
@@ -1293,7 +1366,7 @@ class TestTickIteratesEveryMemberEveryTick:
     def test_tick_logs_group_members_and_each_member(self, caplog):
         """Observability: _tick must emit a greppable line naming the full
         member set per group and each member as iteration reaches it, so the
-        next vpn2 run can prove which members the loop actually probed."""
+        next production run can prove which members the loop actually probed."""
         import logging as _l
 
         desc = _make_desc(
@@ -1336,12 +1409,12 @@ class TestTickIteratesEveryMemberEveryTick:
 # OSPF hops from the hub ipt-server and is NEVER a direct neighbor. The correct
 # liveness signal is the BIDIRECTIONAL P2P adjacency between the edge and its
 # hub-side pod (which IS a Full direct neighbor). These fixtures model the real
-# vpn2 topology captured live 2026-07-04 (see
-# fixtures/ospf_hubspoke_vpn2.py and
+# reference hub-spoke lab topology (see
+# fixtures/ospf_hubspoke.py and
 # docs/artifacts/2026-07-04-nexthop-monitor-edge-liveness-signal-analysis.md).
 # ---------------------------------------------------------------------------
 
-from tasks.tests.fixtures.ospf_hubspoke_vpn2 import (
+from tasks.tests.fixtures.ospf_hubspoke import (
     HS_ROUTER_LSDB_ALIVE,
     HS_NEIGHBORS_ALIVE,
     HS_RIB_ALIVE,
@@ -1576,6 +1649,7 @@ class TestEdgeReciprocalP2pAdjacency:
     hub-side pod that is a Full direct neighbor?"""
 
     def test_de_edge_alive_reciprocal_and_hub_full(self):
+        """Reciprocal P2P adjacency plus Full hub neighbor marks the de edge alive."""
         from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
@@ -1583,6 +1657,7 @@ class TestEdgeReciprocalP2pAdjacency:
         ) is True
 
     def test_pt_edge_alive_reciprocal_and_hub_full(self):
+        """Reciprocal P2P adjacency plus Full hub neighbor marks the pt edge alive."""
         from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
@@ -1590,6 +1665,7 @@ class TestEdgeReciprocalP2pAdjacency:
         ) is True
 
     def test_de_edge_dead_reciprocal_link_withdrawn(self):
+        """A withdrawn reciprocal link marks the de edge dead."""
         from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         # de-hub pod .30 withdrew its P2P link to .33 and .33's LSA is gone ->
@@ -1750,7 +1826,7 @@ class TestBackboneSubnetFromInterface:
         assert _is_on_backbone("172.30.0.6") is True
         # border directly-attached fallback (Fix 8 fixture) still resolves
         assert _resolve_direct_router_nexthop(
-            "10.130.30.50", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+            "10.130.30.50", EDGE_ROUTER_LSDB, EDGE_RIB
         ) == ("172.30.0.38", "backbone")
 
     def test_p2p_tunnel_ip_outside_interface_subnet_rejected(self):
@@ -1768,7 +1844,7 @@ class TestBackboneSubnetFromInterface:
         # usa edge 10.130.30.23 only advertises tunnel IP 10.9.19.2; the
         # blank-.ip fallback must refuse it -> None.
         assert (
-            _resolve_direct_router_nexthop("10.130.30.23", VXXLCX_ROUTER_LSDB, rib)
+            _resolve_direct_router_nexthop("10.130.30.23", EDGE_ROUTER_LSDB, rib)
             is None
         )
 
@@ -1824,6 +1900,7 @@ class TestBackboneSubnetRefreshLogging:
             nm._refresh_backbone_subnets()
 
     def test_warns_once_on_transition_to_empty(self, caplog):
+        """Losing all backbone subnets warns once, not per tick."""
         import logging as _l
 
         with caplog.at_level(_l.WARNING, logger="tasks.nexthop_monitor"):
@@ -1839,6 +1916,7 @@ class TestBackboneSubnetRefreshLogging:
             assert len(warnings) == 2, "re-emptying after recovery must WARN again"
 
     def test_warns_once_when_derivation_fails(self, caplog):
+        """A derivation failure warns once and keeps the previous subnets."""
         import logging as _l
 
         with caplog.at_level(_l.WARNING, logger="tasks.nexthop_monitor"):
@@ -1848,6 +1926,7 @@ class TestBackboneSubnetRefreshLogging:
         assert len(warnings) == 1, "a failing derivation must WARN once"
 
     def test_logs_info_once_when_subnets_change(self, caplog):
+        """A subnet change logs once at INFO with the new set."""
         import logging as _l
 
         with caplog.at_level(_l.INFO, logger="tasks.nexthop_monitor"):
@@ -1899,6 +1978,7 @@ class TestBackboneAddrPrefixReader:
             ]
 
     def test_reads_all_configured_pbr_interfaces(self):
+        """Backbone derivation reads every configured PBR interface, not just the first."""
         fake = self._FakeIPRoute(
             {"backbone": [("192.0.2.10", 26)], "border": [("172.30.0.9", 24)]}
         )
@@ -1911,6 +1991,7 @@ class TestBackboneAddrPrefixReader:
         assert sorted(prefixes) == [("172.30.0.9", 24), ("192.0.2.10", 26)]
 
     def test_defaults_to_backbone_without_config(self):
+        """Without PBR interfaces the derivation falls back to the backbone named "backbone"."""
         fake = self._FakeIPRoute({"backbone": [("172.30.0.9", 24)]})
         with (
             patch("ipt_server.state.CONFIG", None),
@@ -1920,6 +2001,7 @@ class TestBackboneAddrPrefixReader:
         assert prefixes == [("172.30.0.9", 24)]
 
     def test_missing_interface_yields_nothing(self):
+        """A configured interface with no addresses yields no subnets."""
         fake = self._FakeIPRoute({})
         cfg = SimpleNamespace(interfaces=["backbone"])
         with (

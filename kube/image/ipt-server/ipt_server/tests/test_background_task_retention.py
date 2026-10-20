@@ -1,4 +1,4 @@
-"""Regression tests for the background-task-GC bug proven live on vpn2.
+"""Regression tests for the background-task-GC bug proven on a live stand.
 
 ipt_server/main.py spawns several fire-and-forget asyncio tasks via bare
 ``asyncio.create_task(...)`` calls whose return value is discarded. Per the
@@ -87,7 +87,7 @@ async def test_spawn_background_retains_task_across_gc():
     assert ticks["n"] == 1
     assert ref() is not None, (
         "_spawn_background did not retain a strong reference: the task was "
-        "GC-eligible after gc.collect(), reproducing the live vpn2 bug"
+        "GC-eligible after gc.collect(), reproducing the live silent-death bug"
     )
     assert ref() in ipt_main._BACKGROUND_TASKS
 
@@ -120,7 +120,7 @@ async def test_retained_task_finishing_with_exception_is_logged_loudly(caplog):
     """Observability: if a retained background task ever dies with an
     exception, the done-callback must log it at ERROR with the traceback.
 
-    This is the guard that would have made the live vpn2 silent-death loud:
+    This is the guard that would have made the live silent death loud:
     a retained task that finishes with an unretrieved exception produces NO
     asyncio warning (the retention keeps it out of the GC-warning path), so
     the fix must surface it explicitly.
@@ -147,7 +147,7 @@ async def test_retained_task_finishing_with_exception_is_logged_loudly(caplog):
     ), (
         "a retained background task that finished with an exception did not "
         "produce a loud ERROR log via the done-callback; a future silent "
-        "death would go unnoticed (the exact vpn2 failure mode)"
+        "death would go unnoticed (the exact live failure mode)"
     )
 
 

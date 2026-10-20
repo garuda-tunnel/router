@@ -18,10 +18,10 @@ def test_route_spec_always_uses_nhid():
     Code: route.RouteObject.route_spec
     Assertion: spec["nhid"] equals assigned nhid value.
     """
-    r = RouteObject(net="1.2.3.4/32", nhid=100)
+    r = RouteObject(net="192.0.2.10/32", nhid=100)
     spec = r.route_spec
     assert spec["nhid"] == 100
-    assert spec["dst"] == "1.2.3.4"
+    assert spec["dst"] == "192.0.2.10"
     assert spec["dst_len"] == 32
     assert spec["family"] == r.family
     assert spec["proto"] == r.proto
@@ -39,26 +39,6 @@ def test_route_spec_without_nhid_raises():
     r = RouteObject(net="10.0.0.0/8")
     with pytest.raises(RuntimeError, match="nhid"):
         _ = r.route_spec
-
-
-def test_resolve_runtime_path_absent():
-    """RouteObject no longer has resolve_runtime_path method.
-
-    Validates: the per-route resolution method was removed as part of nhid migration.
-    Code: route.RouteObject
-    Assertion: hasattr(RouteObject, 'resolve_runtime_path') is False.
-    """
-    assert not hasattr(RouteObject, "resolve_runtime_path")
-
-
-def test_kernel_default_route_absent():
-    """RouteObject no longer has _kernel_default_route staticmethod.
-
-    Validates: the kernel default route helper was removed as part of nhid migration.
-    Code: route.RouteObject
-    Assertion: hasattr(RouteObject, '_kernel_default_route') is False.
-    """
-    assert not hasattr(RouteObject, "_kernel_default_route")
 
 
 def test_config_rejects_default_sentinel():

@@ -9,6 +9,7 @@ from pinning import kernel as pinning_kernel
 
 
 def test_renders_expected_lines_from_constants():
+    """The rendered file names both managed protos from the code constants."""
     assert rt_protos.render_rt_protos() == (
         f"{route.DNS_PROTO} {route.DNS_PROTO_NAME}\n"
         f"{pinning_kernel.PINNING_PROTO} {pinning_kernel.PINNING_PROTO_NAME}\n"
@@ -17,6 +18,7 @@ def test_renders_expected_lines_from_constants():
 
 
 def test_write_creates_dir_and_file(tmp_path, monkeypatch):
+    """write_rt_protos creates the conf dir and file with final content, no temp leftover."""
     conf = tmp_path / "rt_protos.d" / "garuda.conf"
     monkeypatch.setattr(rt_protos, "RT_PROTOS_CONF_PATH", conf)
     rt_protos.write_rt_protos()
@@ -25,6 +27,7 @@ def test_write_creates_dir_and_file(tmp_path, monkeypatch):
 
 
 def test_second_call_does_not_rewrite(tmp_path, monkeypatch):
+    """An unchanged file is not rewritten (no atomic replace on idempotent second call)."""
     conf = tmp_path / "rt_protos.d" / "garuda.conf"
     monkeypatch.setattr(rt_protos, "RT_PROTOS_CONF_PATH", conf)
     replaces = []
@@ -40,6 +43,7 @@ def test_second_call_does_not_rewrite(tmp_path, monkeypatch):
 
 
 def test_write_failure_warns_and_does_not_raise(tmp_path, monkeypatch, caplog):
+    """A failed write logs one "cosmetic" warning and never raises."""
     # Path is a directory: os.replace onto it fails with OSError.
     monkeypatch.setattr(rt_protos, "RT_PROTOS_CONF_PATH", tmp_path)
     with caplog.at_level(logging.WARNING, logger="rt_protos"):
@@ -50,6 +54,7 @@ def test_write_failure_warns_and_does_not_raise(tmp_path, monkeypatch, caplog):
 
 
 def test_file_numbers_track_constants(tmp_path, monkeypatch):
+    """The file content tracks the proto constants, not stale literals."""
     conf = tmp_path / "garuda.conf"
     monkeypatch.setattr(rt_protos, "RT_PROTOS_CONF_PATH", conf)
     monkeypatch.setattr(route, "DNS_PROTO", route.DNS_PROTO + 1)

@@ -47,7 +47,7 @@ routes:
 **Purpose**: `domain_route_ttl` sets the default time-to-live (TTL) in seconds for routes created from DNS A-records (domain-based routes) when no specific `route_ttl` is defined.
 
 ### How It Works
-- **Route Creation**: When a WebSocket message (e.g., `{"query": "example.com", "content": "93.184.216.34"}`) triggers a route via `Router.on_a_record()`, the TTL is determined as follows:
+- **Route Creation**: When a WebSocket message (e.g., `{"query": "probe.example.net", "content": "192.0.2.10"}`) triggers a route via `Router.on_a_record()`, the TTL is determined as follows:
   1. If the `domain` route specifies `route_ttl`, it takes precedence.
   2. Otherwise, `domain_route_ttl` is used.
   3. The final TTL is the minimum of `route_ttl`, `domain_route_ttl`, and the A-record's `ttl` (if provided).

@@ -9,28 +9,84 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
+filterwarnings = [
+    # Unraisable exceptions surface as Router worker threads / event loops
+    # leaking out of tests (PytestUnraisableExceptionWarning). Fixture
+    # hygiene must prevent them; a leak is a test bug, so make it fatal.
+    "error::pytest.PytestUnraisableExceptionWarning",
+    # Unclosed sockets/files/objects (ResourceWarning) are the same class
+    # of hygiene bug: enforce in the committed config so CI and local
+    # runs behave identically.
+    "error::ResourceWarning",
+]
 
+# Coverage scope: run pytest from this directory (the component root) so
+# `source = ["."]` measures exactly the first-party modules, counts
+# zero-hit files, and never counts installed dependencies.
 [tool.coverage.run]
 branch = true
-include = [
-    "Config.py",
-    "Router.py",
-    "dns_records.py",
-    "lib.py",
-    "nexthop.py",
-    "route.py",
-    "rt_protos.py",
-    "route_config.py",
-    "route_health.py",
-    "ipdb/*.py",
-    "ipt_server/**/*.py",
-    "tasks/*.py",
-    "nftables/*.py",
+source = ["."]
+omit = [
+    # Tests and test fixtures are the measuring instrument, not the product.
+    "tests/*",
+    "*/tests/*",
+    # The component-root conftest.py is the shared test harness (fences,
+    # state restore); it ships no production behavior.
+    "conftest.py",
+    # Vendored upstream nftables Python binding (see nftables/README.md):
+    # copied from the nftables project; its ctypes accessors are upstream's
+    # test responsibility. First-party rendering/error handling stays in
+    # scope; the native integration is covered by the smoke gate.
+    "nftables/*",
+    "*/nftables/*",
 ]
 
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+# Enforced gate: first-party line+branch coverage must stay >= 90%.
+# CI passes --cov-fail-under=90 too; keep both in sync.
+fail_under = 90
+
+# Mutation testing (mutmut 3.x). Bounded to the route-class selection and
+# expiry logic. mutmut writes a mutants/ tree into the working directory,
+# so always run it in a throwaway copy of this directory, never the source
+# checkout:
+#   cp -r kube/image/ipt-server /tmp/ipt-mutmut && cd /tmp/ipt-mutmut
+#   /path/to/venv/bin/mutmut run
+# See readme.md "Tests" for the full recipe.
+[tool.mutmut]
+source_paths = [
+    "route.py",
+    "Router.py",
+]
+also_copy = [
+    "tests/",
+    "tasks/",
+    "ipt_server/",
+    "pinning/",
+    "ipdb/",
+    "nftables/",
+    "templates/",
+    "Config.py",
+    "dns_records.py",
+    "lib.py",
+    "nexthop.py",
+    "route_config.py",
+    "route_health.py",
+    "rt_protos.py",
+    "rule_resolvers.py",
+    "requirements.txt",
+]
+# Bounded scope: only the suites that own route-class behavior run
+# against the mutants. The rendered-chart guard needs the chart tree and
+# Helm, which a mutation copy does not carry (and it protects the chart,
+# not route.py/Router.py).
+pytest_add_cli_args_test_selection = ["tests/"]
+pytest_add_cli_args = [
+    "--deselect",
+    "tests/test_chart_runtime_patch_guard.py::test_rendered_chart_has_no_runtime_patch_wiring",
+]
 
 [tool.pylint.main]
 ignore-paths = ["^.*/tests/.*$"]

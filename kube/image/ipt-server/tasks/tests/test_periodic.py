@@ -1,6 +1,6 @@
 """Tests for the resilient periodic-loop helper (tasks/periodic.py).
 
-Regression coverage for the vpn2 blackhole where every FRR-bridge-probing
+Regression coverage for a live blackhole incident where every FRR-bridge-probing
 monitor loop died silently after its first tick. The helper must guarantee:
 
   1. A single tick raising Exception NEVER kills the loop (logs + continues).
@@ -22,6 +22,7 @@ from tasks.periodic import run_periodic
 
 @pytest.mark.asyncio
 async def test_loop_survives_tick_raising_exception():
+    """A tick raising Exception is logged and the loop keeps ticking."""
     calls = {"n": 0}
     stop = asyncio.Event()
 
@@ -42,6 +43,7 @@ async def test_loop_survives_tick_raising_exception():
 
 @pytest.mark.asyncio
 async def test_loop_survives_tick_raising_base_exception():
+    """A stray non-Exception BaseException also fails to kill the loop."""
     calls = {"n": 0}
     stop = asyncio.Event()
 
@@ -61,6 +63,7 @@ async def test_loop_survives_tick_raising_base_exception():
 
 @pytest.mark.asyncio
 async def test_loop_survives_hanging_tick_via_tick_timeout():
+    """A hung tick is abandoned at tick_timeout and the next tick still runs."""
     calls = {"n": 0}
     stop = asyncio.Event()
 
@@ -82,24 +85,32 @@ async def test_loop_survives_hanging_tick_via_tick_timeout():
 
 @pytest.mark.asyncio
 async def test_cancelled_error_propagates_and_stops_loop():
-    calls = {"n": 0}
-    stop = asyncio.Event()
+    """Cancellation still propagates (cooperative shutdown is preserved).
+
+    The tick signals that it started, then never returns on its own; the
+    cancellation is issued only after that signal, so the CancelledError
+    is provably delivered to a running loop rather than raced against it.
+    The wait_for timeout is a hang guard only.
+    """
+    started = asyncio.Event()
 
     async def tick():
-        calls["n"] += 1
-        await asyncio.sleep(0.5)
+        started.set()
+        await asyncio.Event().wait()  # never set: only cancellation ends it
 
+    stop = asyncio.Event()
     task = asyncio.create_task(
-        run_periodic("t", tick, interval=0, stop_event=stop, tick_timeout=1)
+        run_periodic("t", tick, interval=0, stop_event=stop, tick_timeout=60)
     )
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(started.wait(), timeout=5.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(task, timeout=5.0)
 
 
 @pytest.mark.asyncio
 async def test_stop_event_exits_promptly_and_logs_reason(caplog):
+    """stop_set exits promptly and the exit reason is greppable in logs."""
     stop = asyncio.Event()
 
     async def tick():

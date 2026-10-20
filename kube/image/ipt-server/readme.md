@@ -88,10 +88,63 @@ docker run -d --network host --cap-add NET_ADMIN --cap-add NET_RAW -v $(pwd)/set
 - Start the service and send A-records via WebSocket to `ws://<host>:<ws_port>` (default port: 8765).
 - Example WebSocket message:
   ```json
-  {"query": "example.com", "content": "93.184.216.34", "name": "example.com", "type": 1}
+  {"query": "probe.example.net", "content": "192.0.2.10", "name": "probe.example.net", "type": 1}
   ```
 
-For detailed configuration options, see [configuration.md](configuration.md). For insights into TTL, NHG failover, and routing principles, refer to [featues.md](featues.md).
+## Tests
+
+The pytest suite lives next to the code it covers (`tests/`, `ipt_server/tests/`,
+`tasks/tests/`, `ipdb/tests/`, `pinning/tests/`). It is hermetic: every kernel
+boundary (`ip`/`nft`/netlink/vtysh) is patched or faked, and no test needs
+NET_ADMIN or touches `/etc`.
+
+All commands below run from the component directory (the one containing
+this readme); from a repository clone that means:
+
+```bash
+cd kube/image/ipt-server
+python -m venv /tmp/ipt-venv
+/tmp/ipt-venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+/tmp/ipt-venv/bin/python -m pytest --cov --cov-branch --cov-fail-under=90
+```
+
+Coverage is enforced, not just measured: `pyproject.toml` scopes coverage to
+first-party code (tests and the vendored `nftables/` binding are omitted, with
+the justification written there) and gates the total at 90%. CI runs the same
+command from this directory on every pull request and push to `main`
+(`.github/workflows/test-ipt-server.yml`) and additionally enforces line and
+branch coverage >= 90% separately.
+
+Test-writing conventions (docstrings, behavior-over-shape, deterministic
+synchronization, sanitized example.net/RFC 5737 test data) are documented in
+`tests/README.md`.
+
+### Duplicate-test detection
+
+```bash
+/tmp/ipt-venv/bin/pytest_deduplicate
+```
+
+Reports test functions with identical per-test coverage signatures; merge or
+delete true duplicates only — same signature is a hint, not proof.
+
+### Mutation testing (bounded)
+
+`mutmut` is configured in `pyproject.toml` (`[tool.mutmut]`) for the
+route-class selection/expiry logic (`route.py`, `Router.py`). It writes a
+`mutants/` tree into the working directory, so always run it on a throwaway
+copy, never the source checkout:
+
+```bash
+cp -r kube/image/ipt-server /tmp/ipt-mutmut
+cd /tmp/ipt-mutmut
+/path/to/venv/bin/mutmut run
+```
+
+Surviving mutants in `route.py`/`Router.py` mean the route-class tests accept
+behavior they should reject — add or tighten the owning test, then re-run.
+
+For detailed configuration options, see [configuration.md](configuration.md). For insights on TTL, NHG failover, and routing principles, refer to [featues.md](featues.md).
 
 ## Contributing
 Feel free to open issues or submit pull requests. Ensure your changes are tested and documented.

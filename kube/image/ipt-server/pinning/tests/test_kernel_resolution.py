@@ -11,6 +11,7 @@ from pinning.nft_renderer import PIN_BIT, PIN_MARK_BASE
 
 
 def test_constants_have_expected_values():
+    """Kernel-side constants (proto, table base, marks) keep their contracted values."""
     assert kernel.PINNING_PROTO == 201
     assert kernel.PINNING_TABLE_BASE == 300
     assert kernel.PINNING_RULE_PRIORITY == 100
@@ -19,20 +20,24 @@ def test_constants_have_expected_values():
 
 
 def test_pin_mark_base_carries_pin_bit():
+    """PIN_MARK_BASE includes PIN_BIT so pinned marks are recognizable by bitmask."""
     assert PIN_MARK_BASE & PIN_BIT == PIN_BIT
 
 
 def test_table_for_index_starts_at_table_base():
+    """Per-egress routing tables are numbered from PINNING_TABLE_BASE."""
     assert kernel._table_for_index(0) == kernel.PINNING_TABLE_BASE
     assert kernel._table_for_index(3) == kernel.PINNING_TABLE_BASE + 3
 
 
 def test_mark_for_index_starts_at_pin_mark_base():
+    """Per-egress fwmarks are numbered from PIN_MARK_BASE."""
     assert kernel._mark_for_index(0) == PIN_MARK_BASE
     assert kernel._mark_for_index(3) == PIN_MARK_BASE + 3
 
 
 def test_egress_index_resolves_sorted_catalog_position():
+    """Egress index equals the sorted catalog position (stable across restarts)."""
     catalog = {"outer-pt": object(), "outer-de": object(), "hub": object()}
     rec = kernel.KernelReconciler(
         catalog=catalog,
@@ -47,6 +52,7 @@ def test_egress_index_resolves_sorted_catalog_position():
 
 
 def test_egress_index_unknown_raises():
+    """An unknown egress name raises rather than silently misrouting."""
     rec = kernel.KernelReconciler(
         catalog={"hub": object()},
         portal_addr="192.0.2.1",

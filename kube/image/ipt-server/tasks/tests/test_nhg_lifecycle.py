@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock, call
 import pytest
 
 from Config import RouteActionGroup, RouteMember, NhgDescriptor
-from Router import Router
+from tests.support import hermetic_router
 
 
 def _make_config(routes):
@@ -25,12 +25,22 @@ def _make_config(routes):
     )
 
 
-def _make_router(config):
-    """Create a Router instance with background threads suppressed."""
-    with patch("Router.Router._process_route_commands_iproute2"):
-        router = Router(config, ipdb=MagicMock())
-    router._shutdown_event.set()
-    return router
+@pytest.fixture
+def make_router():
+    """Provide hermetic_router instances; workers are joined on teardown."""
+    contexts = []
+
+    def _factory(config):
+        ctx = hermetic_router(config)
+        router = ctx.__enter__()
+        contexts.append(ctx)
+        return router
+
+    try:
+        yield _factory
+    finally:
+        for ctx in contexts:
+            ctx.__exit__(None, None, None)
 
 
 def _make_group(members, rules=None):
@@ -45,7 +55,7 @@ def _make_group(members, rules=None):
 # ---------------------------------------------------------------------------
 
 
-def test_nhg_setup_flushes_then_creates():
+def test_nhg_setup_flushes_then_creates(make_router):
     """Flush is called before any nexthop create during setup.
 
     Validates: Router.setup_nexthop_group() calls flush_owned once and before creates.
@@ -54,7 +64,7 @@ def test_nhg_setup_flushes_then_creates():
     """
     group = _make_group([{"gw": "10.9.19.2"}, {"dev": "border"}])
     config = _make_config([group])
-    router = _make_router(config)
+    router = make_router(config)
 
     call_log = []
 
@@ -99,7 +109,7 @@ def test_nhg_setup_flushes_then_creates():
 # ---------------------------------------------------------------------------
 
 
-def test_nhg_startup_flush_failure_aborts():
+def test_nhg_startup_flush_failure_aborts(make_router):
     """RuntimeError from flush_owned propagates and no creates happen.
 
     Validates: Router.setup_nexthop_group() re-raises flush_owned RuntimeError.
@@ -108,7 +118,7 @@ def test_nhg_startup_flush_failure_aborts():
     """
     group = _make_group([{"gw": "10.9.19.2"}])
     config = _make_config([group])
-    router = _make_router(config)
+    router = make_router(config)
 
     mock_create = MagicMock()
     mock_create_device = MagicMock()
@@ -133,7 +143,7 @@ def test_nhg_startup_flush_failure_aborts():
 # ---------------------------------------------------------------------------
 
 
-def test_nhg_creates_member_per_unique_key():
+def test_nhg_creates_member_per_unique_key(make_router):
     """Each unique (gw, dev) pair gets exactly one member nexthop object.
 
     Validates: Router.setup_nexthop_group() creates one nexthop per unique member.
@@ -143,7 +153,7 @@ def test_nhg_creates_member_per_unique_key():
     """
     group = _make_group([{"gw": "10.9.19.2"}, {"dev": "border"}])
     config = _make_config([group])
-    router = _make_router(config)
+    router = make_router(config)
 
     mock_create = MagicMock()
     mock_create_blackhole = MagicMock()
@@ -172,7 +182,7 @@ def test_nhg_creates_member_per_unique_key():
 # ---------------------------------------------------------------------------
 
 
-def test_nhg_creates_group_with_highest_priority_alive():
+def test_nhg_creates_group_with_highest_priority_alive(make_router):
     """Group nhid points to the first alive member (highest priority).
 
     With the new blackhole-on-init contract, gw is always dead at startup.
@@ -186,7 +196,7 @@ def test_nhg_creates_group_with_highest_priority_alive():
     """
     group = _make_group([{"gw": "10.9.19.2"}, {"dev": "border"}])
     config = _make_config([group])
-    router = _make_router(config)
+    router = make_router(config)
 
     created_nhids = {}  # nhid -> type
 
@@ -225,7 +235,7 @@ def test_nhg_creates_group_with_highest_priority_alive():
 # ---------------------------------------------------------------------------
 
 
-def test_nhg_gw_not_converged_creates_blackhole():
+def test_nhg_gw_not_converged_creates_blackhole(make_router):
     """Unreachable gw member becomes blackhole; group falls back to alive dev member.
 
     Validates: Router.setup_nexthop_group() creates blackhole for failed gw and picks dev member.
@@ -234,7 +244,7 @@ def test_nhg_gw_not_converged_creates_blackhole():
     """
     group = _make_group([{"gw": "10.9.19.2"}, {"dev": "border"}])
     config = _make_config([group])
-    router = _make_router(config)
+    router = make_router(config)
 
     blackhole_nhids = set()
     device_nhids = {}

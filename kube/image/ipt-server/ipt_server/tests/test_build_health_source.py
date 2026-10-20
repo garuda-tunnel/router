@@ -1,7 +1,7 @@
 """Tests for ipt_server.build_route_health_source factory function."""
 
 import unittest
-from unittest.mock import patch, PropertyMock
+from unittest.mock import patch
 from Config import MySettings
 from route_health import FrrVtyshOspfHealthSource
 
@@ -9,10 +9,8 @@ from route_health import FrrVtyshOspfHealthSource
 class TestBuildRouteHealthSource(unittest.TestCase):
     """Tests for ipt_server.build_route_health_source factory function."""
 
-    @patch("route.RouteObject.interfaces", new_callable=PropertyMock)
-    def test_returns_none_when_no_gated_interfaces(self, mock_interfaces):
+    def test_returns_none_when_no_gated_interfaces(self):
         """build_route_health_source returns None when route_health.interfaces is empty."""
-        mock_interfaces.return_value = {"eth0": [(1, 0)]}
 
         config = MySettings(
             table=200,
@@ -29,10 +27,8 @@ class TestBuildRouteHealthSource(unittest.TestCase):
         result = ipt_server.main.build_route_health_source(config)
         self.assertIsNone(result)
 
-    @patch("route.RouteObject.interfaces", new_callable=PropertyMock)
-    def test_returns_frr_source_when_gated_interfaces_exist(self, mock_interfaces):
+    def test_returns_frr_source_when_gated_interfaces_exist(self):
         """build_route_health_source returns FrrVtyshOspfHealthSource when interfaces configured."""
-        mock_interfaces.return_value = {"eth0": [(1, 0)]}
 
         config = MySettings(
             table=200,

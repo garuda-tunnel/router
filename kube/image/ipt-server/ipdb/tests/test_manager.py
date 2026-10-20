@@ -15,7 +15,7 @@ import duckdb
 
 class TestIpdbManager(unittest.TestCase):
     def _write_valid_ipdb(self, path: Path, rows=None):
-        rows = rows or [("1.1.1.0", "1.1.1.255", "AU")]
+        rows = rows or [("192.0.2.0", "192.0.2.255", "AU")]
         conn = duckdb.connect(str(path))
         try:
             conn.execute(
@@ -40,11 +40,12 @@ class TestIpdbManager(unittest.TestCase):
                 gz_path.unlink()
 
     def test_fallback_builder_tries_current_then_previous_month(self):
+        """Fallback builder downloads the current month first, then the previous month."""
         from ipdb.build_fallback import build_fallback_db
 
         with tempfile.TemporaryDirectory() as td:
             output_db = Path(td) / "fallback.db"
-            payload_bytes = self._make_csv_gz_payload([("1.1.1.0", "1.1.1.255", "AU")])
+            payload_bytes = self._make_csv_gz_payload([("192.0.2.0", "192.0.2.255", "AU")])
 
             with patch("ipdb.build_fallback.urlopen") as mock_urlopen:
                 previous_response = MagicMock()
@@ -69,6 +70,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertTrue(output_db.exists())
 
     def test_fallback_builder_fails_when_both_candidates_fail(self):
+        """When both month candidates fail the builder raises a RuntimeError naming the fallback."""
         from ipdb.build_fallback import build_fallback_db
 
         with tempfile.TemporaryDirectory() as td:
@@ -92,6 +94,7 @@ class TestIpdbManager(unittest.TestCase):
         self.assertIn("failed to build fallback ipdb", str(exc_info.exception))
 
     def test_fallback_builder_propagates_unexpected_errors(self):
+        """Non-operational errors are not masked by the fallback logic."""
         from ipdb.build_fallback import build_fallback_db
 
         with patch("ipdb.build_fallback._build_for_month") as mock_build:
@@ -106,6 +109,7 @@ class TestIpdbManager(unittest.TestCase):
         self.assertEqual(mock_build.call_count, 1)
 
     def test_query_layer_init_has_no_download_side_effects(self):
+        """IPDatabase init only opens the local DB; no download may occur."""
         from ipdb.query import IPDatabase
 
         with tempfile.TemporaryDirectory() as td:
@@ -119,6 +123,7 @@ class TestIpdbManager(unittest.TestCase):
             mock_urlopen.assert_not_called()
 
     def test_query_layer_country_lookup_has_no_download_side_effects(self):
+        """Country lookup reads only the local DB."""
         from ipdb.query import IPDatabase
 
         with tempfile.TemporaryDirectory() as td:
@@ -126,8 +131,8 @@ class TestIpdbManager(unittest.TestCase):
             self._write_valid_ipdb(
                 runtime_db,
                 rows=[
-                    ("1.1.1.0", "1.1.1.255", "AU"),
-                    ("2.2.2.0", "2.2.2.255", "US"),
+                    ("192.0.2.0", "192.0.2.255", "AU"),
+                    ("198.51.100.0", "198.51.100.255", "US"),
                 ],
             )
 
@@ -135,10 +140,11 @@ class TestIpdbManager(unittest.TestCase):
                 query_db = IPDatabase(str(runtime_db))
                 country_networks = list(query_db["AU"])
 
-            self.assertIn(ipaddress.IPv4Network("1.1.1.0/24"), country_networks)
+            self.assertIn(ipaddress.IPv4Network("192.0.2.0/24"), country_networks)
             mock_urlopen.assert_not_called()
 
     def test_query_layer_rejects_empty_country_list(self):
+        """An empty country list is rejected (likely config error)."""
         from ipdb.query import IPDatabase
 
         with tempfile.TemporaryDirectory() as td:
@@ -150,6 +156,7 @@ class TestIpdbManager(unittest.TestCase):
                 list(query_db.country_nets([]))
 
     def test_query_layer_rejects_non_string_country_items(self):
+        """Non-string country items are rejected."""
         from ipdb.query import IPDatabase
 
         with tempfile.TemporaryDirectory() as td:
@@ -161,6 +168,7 @@ class TestIpdbManager(unittest.TestCase):
                 list(query_db.country_nets(["AU", 123]))
 
     def test_query_layer_country_lookup_uses_bound_sql_parameters(self):
+        """A SQL-injection-shaped country string returns nothing rather than executing injected SQL."""
         from ipdb.query import IPDatabase
 
         with tempfile.TemporaryDirectory() as td:
@@ -168,8 +176,8 @@ class TestIpdbManager(unittest.TestCase):
             self._write_valid_ipdb(
                 runtime_db,
                 rows=[
-                    ("1.1.1.0", "1.1.1.255", "AU"),
-                    ("2.2.2.0", "2.2.2.255", "US"),
+                    ("192.0.2.0", "192.0.2.255", "AU"),
+                    ("198.51.100.0", "198.51.100.255", "US"),
                 ],
             )
             query_db = IPDatabase(str(runtime_db))
@@ -180,12 +188,14 @@ class TestIpdbManager(unittest.TestCase):
             self.assertEqual(country_networks, [])
 
     def test_prepare_fallback_manager_default_path_is_embedded(self):
+        """The manager defaults to the image-embedded fallback DB path."""
         from ipdb.manager import IptDbManager
 
         manager = IptDbManager()
         self.assertEqual(str(manager.fallback_db_path), "/opt/fallback/ipt.db")
 
     def test_prepare_fallback_validates_readability_before_download_attempts(self):
+        """An unreadable fallback fails fast (fallback_db_unreadable) before any network attempt."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -206,6 +216,7 @@ class TestIpdbManager(unittest.TestCase):
             mock_download.assert_not_called()
 
     def test_prepare_fallback_uses_one_request_per_month_candidate(self):
+        """Exactly one download attempt per month candidate, then fallback restore."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -236,6 +247,7 @@ class TestIpdbManager(unittest.TestCase):
             mock_restore_fallback.assert_called_once_with()
 
     def test_prepare_fallback_restore_uses_atomic_replace(self):
+        """Fallback restore copies to a temp file and atomically replaces the runtime DB."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -243,7 +255,7 @@ class TestIpdbManager(unittest.TestCase):
             fallback_db = Path(td) / "fallback.db"
             self._write_valid_ipdb(
                 fallback_db,
-                rows=[("11.11.11.0", "11.11.11.255", "DE")],
+                rows=[("203.0.113.0", "203.0.113.255", "DE")],
             )
 
             manager = IptDbManager(runtime_db=runtime_db, fallback_db=fallback_db)
@@ -279,6 +291,7 @@ class TestIpdbManager(unittest.TestCase):
                 conn.close()
 
     def test_prepare_uses_existing_fresh_file(self):
+        """A fresh runtime DB is reused without downloads."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -295,6 +308,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertEqual(result.reason, "fresh_runtime_db")
 
     def test_prepare_fresh_uses_utc_age_lt_86400(self):
+        """Freshness boundary is 86400s UTC mtime, exclusive at exactly one day."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -316,6 +330,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertFalse(manager._is_fresh(runtime_db, now))
 
     def test_prepare_current_then_previous_then_fallback(self):
+        """Full candidate chain: current, previous, then fallback restore."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -347,6 +362,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertEqual(second_call.kwargs["timeout"], 30)
 
     def test_prepare_uses_previous_when_current_download_fails(self):
+        """A failed current-month download falls back to the previous month payload."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -355,7 +371,7 @@ class TestIpdbManager(unittest.TestCase):
             self._write_valid_ipdb(fallback_db)
 
             previous_payload_bytes = self._make_csv_gz_payload(
-                [("1.1.1.0", "1.1.1.255", "AU")]
+                [("192.0.2.0", "192.0.2.255", "AU")]
             )
 
             manager = IptDbManager(runtime_db=runtime_db, fallback_db=fallback_db)
@@ -394,6 +410,7 @@ class TestIpdbManager(unittest.TestCase):
                 conn.close()
 
     def test_prepare_fails_when_downloaded_and_fallback_dbs_are_invalid(self):
+        """An invalid (non-duckdb) fallback raises rather than shipping garbage."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -412,6 +429,7 @@ class TestIpdbManager(unittest.TestCase):
             mock_urlopen.assert_not_called()
 
     def test_prepare_fails_when_fallback_missing(self):
+        """A missing fallback raises before any download is attempted."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -428,6 +446,7 @@ class TestIpdbManager(unittest.TestCase):
             mock_urlopen.assert_not_called()
 
     def test_prepare_uses_atomic_replace_on_download_success(self):
+        """Downloaded DBs are staged and atomically moved into place."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -437,8 +456,8 @@ class TestIpdbManager(unittest.TestCase):
 
             payload_bytes = self._make_csv_gz_payload(
                 [
-                    ("8.8.8.0", "8.8.8.255", "US"),
-                    ("9.9.9.0", "9.9.9.255", "US"),
+                    ("192.0.2.0", "192.0.2.255", "US"),
+                    ("198.51.100.0", "198.51.100.255", "US"),
                 ]
             )
 
@@ -477,6 +496,7 @@ class TestIpdbManager(unittest.TestCase):
                 conn.close()
 
     def test_validate_db_rejects_missing_or_wrong_schema(self):
+        """Validation rejects missing files and wrong schemas with distinct reasons."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -503,6 +523,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertEqual(str(schema_exc.exception), "db_invalid_schema")
 
     def test_prepare_propagates_unexpected_exception_from_current(self):
+        """Unexpected (non-operational) download errors propagate."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -523,6 +544,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertEqual(download_mock.call_count, 1)
 
     def test_prepare_creates_runtime_parent_for_download_path(self):
+        """Missing runtime parent directories are created for the download path."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
@@ -530,7 +552,7 @@ class TestIpdbManager(unittest.TestCase):
             fallback_db = Path(td) / "fallback.db"
             self._write_valid_ipdb(fallback_db)
 
-            payload_bytes = self._make_csv_gz_payload([("8.8.8.0", "8.8.8.255", "US")])
+            payload_bytes = self._make_csv_gz_payload([("192.0.2.0", "192.0.2.255", "US")])
 
             manager = IptDbManager(runtime_db=runtime_db, fallback_db=fallback_db)
             with patch("ipdb.manager.urlopen") as mock_urlopen:
@@ -550,6 +572,7 @@ class TestIpdbManager(unittest.TestCase):
             self.assertTrue(runtime_db.exists())
 
     def test_prepare_creates_runtime_parent_for_fallback_restore(self):
+        """Missing runtime parent directories are created for the restore path."""
         from ipdb.manager import IptDbManager
 
         with tempfile.TemporaryDirectory() as td:
