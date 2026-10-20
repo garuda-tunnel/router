@@ -13,7 +13,13 @@ import logging
 import time
 import Config
 from Config import NhgDescriptor
-from route import RouteObject
+from route import (
+    DNS_METRIC,
+    DNS_PROTO,
+    STATIC_METRIC,
+    STATIC_PROTO,
+    RouteObject,
+)
 import nexthop
 import threading
 import copy
@@ -151,7 +157,12 @@ class Router:
         dst_len = spec["dst_len"]
         nhid = spec["nhid"]
         table = spec["table"]
-        self._ip_batch([f"route replace {dst}/{dst_len} nhid {nhid} table {table}"])
+        self._ip_batch(
+            [
+                f"route replace {dst}/{dst_len} nhid {nhid} table {table} "
+                f"proto {spec['proto']} metric {spec['priority']}"
+            ]
+        )
         logger.debug("Applied route immediately: %s nhid=%s", route, nhid)
 
     def add_route(
@@ -171,22 +182,25 @@ class Router:
                 if (
                     interval.begin == net_start
                     and interval.end == net_end + 1
+                    and interval.data.proto == route.proto
                     and interval.data.metric == route.metric
                     and interval.data.weight == route.weight
                     and interval.data.dev == route.dev
                     and interval.data.gw == route.gw
                     and interval.data.nhid == route.nhid
                 ):
-                    if interval.data.ttl is None or route.ttl is None:
-                        # A permanent route (ttl=None) never gains an
-                        # expiration: whichever side is permanent wins, so a
-                        # DNS-TTL refresh cannot expire a static route (#61).
-                        interval.data.ttl = None
-                        interval.data.expiration = None
-                    else:
-                        interval.data.reset_expiration(route.ttl)
+                    # Same route class only: a STATIC and a DNS route for the
+                    # same prefix are distinct entries and never refresh each
+                    # other (#68); same-class refresh keeps the pre-#62
+                    # reset_expiration semantics.
+                    interval.data.reset_expiration(route.ttl)
                     result = copy.deepcopy(interval.data)
                     outcome = "refresh"
+                    if immediate:
+                        # Re-apply on refresh too: an idempotent replace
+                        # heals a kernel entry lost to a table flush or a
+                        # stale queued delete (#69 review).
+                        route_to_apply = interval.data
                     break
 
             if result is None:
@@ -254,7 +268,8 @@ class Router:
                 dst_len = spec["dst_len"]
                 nhid = spec["nhid"]
                 lines.append(
-                    f"route replace {dst}/{dst_len} nhid {nhid} table {self._cfg.table}"
+                    f"route replace {dst}/{dst_len} nhid {nhid} table {self._cfg.table} "
+                    f"proto {spec['proto']} metric {spec['priority']}"
                 )
                 count += 1
         self._ip_batch(lines)
@@ -279,7 +294,8 @@ class Router:
                 dst_len = spec["dst_len"]
                 nhid = spec["nhid"]
                 lines.append(
-                    f"route replace {dst}/{dst_len} nhid {nhid} table {self._cfg.table}"
+                    f"route replace {dst}/{dst_len} nhid {nhid} table {self._cfg.table} "
+                    f"proto {spec['proto']} metric {spec['priority']}"
                 )
                 count += 1
         self._ip_batch(lines)
@@ -307,7 +323,10 @@ class Router:
                     continue
                 dst = spec["dst"]
                 dst_len = spec["dst_len"]
-                lines.append(f"route del {dst}/{dst_len} table {self._cfg.table}")
+                lines.append(
+                    f"route del {dst}/{dst_len} table {self._cfg.table} "
+                    f"proto {spec['proto']} metric {spec['priority']}"
+                )
                 count += 1
         self._ip_batch(lines)
         logger.info(f"Removed {count} routes for interface {iface} from kernel")
@@ -389,9 +408,39 @@ class Router:
                 desc,
             )
 
+    def _route_still_present(self, route_spec: dict) -> bool:
+        """Return True if a route with the delete identity (net, proto,
+        metric) is in the route tree.
+
+        The kernel delete matches dst/table/proto/metric regardless of
+        nhid, so a same-prefix route re-added through a different group
+        must suppress the delete too. Callers hold _routes_lock and run
+        the kernel delete inside the same critical section, making the
+        check-and-delete atomic with respect to route insertion (#69
+        re-review).
+        """
+        network = ipaddress.IPv4Network(f"{route_spec['dst']}/{route_spec['dst_len']}")
+        start = int(network.network_address)
+        end = int(network.broadcast_address) + 1
+        for interval in self._route_tree[start:end]:
+            if (
+                interval.begin == start
+                and interval.end == end
+                and interval.data.proto == route_spec["proto"]
+                and interval.data.metric == route_spec["priority"]
+            ):
+                return True
+        return False
+
     @timeit
     def _load_routes(self):
-        """Load routes from config into runtime route tree using nhg registry."""
+        """Load routes from config into runtime route tree using nhg registry.
+
+        Stale kernel state need not be cleaned here: main() runs
+        startup_apply_network_state() (clean_pbr flushes the whole managed
+        table) before the Router is constructed, and every runtime reflush
+        is followed by a full route replay.
+        """
         self.setup_nexthop_group()
 
         for conf_route in self._cfg.routes:
@@ -415,14 +464,20 @@ class Router:
                     continue  # handled by on_a_record
                 elif isinstance(rule, Config.NetRule):
                     net = ipaddress.IPv4Network(rule.net, strict=False)
-                    r = RouteObject(net=net, nhid=nhid, metric=200)
+                    r = RouteObject(
+                        net=net,
+                        nhid=nhid,
+                        proto=STATIC_PROTO,
+                        metric=STATIC_METRIC,
+                    )
                     self.add_route(r)
                 elif isinstance(rule, Config.CountryRule):
                     for net in self._ipdb[rule.country]:
                         r = RouteObject(
                             net=ipaddress.IPv4Network(net, strict=False),
                             nhid=nhid,
-                            metric=200,
+                            proto=STATIC_PROTO,
+                            metric=STATIC_METRIC,
                         )
                         self.add_route(r)
         logger.info("Routes loaded via nhg")
@@ -526,12 +581,18 @@ class Router:
                 selected_route = RouteObject(
                     net=ip_network,
                     nhid=nhid,
-                    metric=200,
+                    proto=DNS_PROTO,
+                    metric=DNS_METRIC,
                 )
 
         if selected_route:
             valid_ttls = [ttl for ttl in ttls if ttl is not None and ttl > 0]
-            final_ttl = min(valid_ttls) if valid_ttls else None
+            if valid_ttls:
+                final_ttl = min(valid_ttls)
+            else:
+                # No usable answer TTL (none or 0): fall back to the config
+                # domain TTL — a DNS-learned route is never permanent (#68).
+                final_ttl = self._cfg.domain_route_ttl
             selected_route.ttl = final_ttl
 
             logger.info(
@@ -597,39 +658,72 @@ class Router:
         last_commit_time = time.time()
 
         while not self._shutdown_event.is_set():
-            batch_lines = []
-            current_batch_tree = IntervalTree()
+            commands = []
 
             while not self._shutdown_event.is_set():
                 try:
-                    cmd, route_spec = self._route_queue.get(timeout=0.01)
-                    route_spec["table"] = self._cfg.table
-                    dst = route_spec.get("dst", "")
-                    dst_len = route_spec.get("dst_len", 32)
-                    nhid = route_spec.get("nhid")
-                    table = route_spec["table"]
-
-                    if cmd == "del":
-                        batch_lines.append(f"route del {dst}/{dst_len} table {table}")
-                    else:
-                        batch_lines.append(
-                            f"route {cmd} {dst}/{dst_len} nhid {nhid} table {table}"
-                        )
-
-                    if dst and dst_len:
-                        network = ipaddress.IPv4Network(f"{dst}/{dst_len}")
-                        start = int(network.network_address)
-                        end = int(network.broadcast_address) + 1
-                        current_batch_tree[start:end] = {"network": network}
-
+                    commands.append(self._route_queue.get(timeout=0.01))
                     if time.time() - last_commit_time >= commit_interval:
                         break
                 except queue.Empty:
                     break
 
-            if batch_lines:
-                logger.info("Process batch %d routes", len(batch_lines))
-                self._ip_batch(batch_lines)
+            batch_lines = []
+            current_batch_tree = IntervalTree()
+
+            if commands:
+                # Stale-delete validation and the kernel delete must be one
+                # critical section wrt route insertion: hold _routes_lock
+                # across the check and the ip -batch execution. add_route()
+                # mutates the tree under the same lock and only applies to
+                # the kernel after releasing it, so a delete validated here
+                # can never be overtaken by a concurrent insert's apply
+                # (#69 re-review). Nobody waits on this queue while holding
+                # _routes_lock, so the nested queue.get above is safe.
+                with self._routes_lock:
+                    for cmd, route_spec in commands:
+                        route_spec["table"] = self._cfg.table
+                        dst = route_spec.get("dst", "")
+                        dst_len = route_spec.get("dst_len", 32)
+                        nhid = route_spec.get("nhid")
+                        table = route_spec["table"]
+
+                        if cmd == "del":
+                            if self._route_still_present(route_spec):
+                                # The expiry-swept route was re-added before
+                                # this delete ran; dropping the stale delete
+                                # keeps the fresh kernel entry (#69 review).
+                                logger.info(
+                                    "Skipping stale route delete: %s/%s "
+                                    "proto %s metric %s",
+                                    dst,
+                                    dst_len,
+                                    route_spec.get("proto"),
+                                    route_spec.get("priority"),
+                                )
+                                continue
+                            batch_lines.append(
+                                f"route del {dst}/{dst_len} table {table} "
+                                f"proto {route_spec['proto']} "
+                                f"metric {route_spec['priority']}"
+                            )
+                        else:
+                            batch_lines.append(
+                                f"route {cmd} {dst}/{dst_len} nhid {nhid} "
+                                f"table {table} "
+                                f"proto {route_spec['proto']} "
+                                f"metric {route_spec['priority']}"
+                            )
+
+                        if dst and dst_len:
+                            network = ipaddress.IPv4Network(f"{dst}/{dst_len}")
+                            start = int(network.network_address)
+                            end = int(network.broadcast_address) + 1
+                            current_batch_tree[start:end] = {"network": network}
+
+                    if batch_lines:
+                        logger.info("Process batch %d routes", len(batch_lines))
+                        self._ip_batch(batch_lines)
 
             if len(current_batch_tree) > 0:
                 self.remove_conntrack_entries_for_destination(current_batch_tree)

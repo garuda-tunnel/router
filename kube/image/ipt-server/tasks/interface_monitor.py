@@ -154,10 +154,22 @@ async def monitor_interfaces(stop_event):
             logger.info("PBR interface changed, reapplying PBR rules...")
             try:
                 await asyncio.to_thread(apply_pbr)
-                if state.ROUTER:
-                    await replay_healthy_routes()
             except Exception as e:
                 logger.error(f"Failed to re-apply PBR: {e}")
+            finally:
+                # apply_pbr -> clean_pbr flushed the managed table; every
+                # in-memory route must go back in even when the PBR apply
+                # itself failed — otherwise the kernel is left without
+                # routes that are still in memory (#69 review). Full
+                # replay, not per-interface: grouped STATIC/DNS routes
+                # carry only an nhid (dev=None), so a per-interface replay
+                # would skip them; unhealthy members are handled inside the
+                # nexthop groups (blackhole) by the nexthop monitor.
+                if state.ROUTER:
+                    try:
+                        await asyncio.to_thread(state.ROUTER.replay_routes)
+                    except Exception as e:
+                        logger.error(f"Failed to replay routes after PBR reapply: {e}")
         elif need_route_replay:
             logger.info("Route interface changed, replaying routes...")
             try:

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch, MagicMock, PropertyMock
 
 from Router import Router
+from route import DNS_METRIC, DNS_PROTO
 
 
 class TestRouteQueueWorkerReplace(unittest.TestCase):
@@ -15,7 +16,8 @@ class TestRouteQueueWorkerReplace(unittest.TestCase):
     def test_route_queue_worker_supports_replace(
         self, mock_subprocess_run, mock_interfaces
     ):
-        """A ('replace', spec) on the queue becomes an ip -batch subprocess call."""
+        """A ('replace', spec) on the queue becomes an ip -batch subprocess call
+        carrying the route class proto and metric (#68)."""
         import time
 
         mock_interfaces.return_value = {"backbone": [(1, 0)]}
@@ -35,9 +37,11 @@ class TestRouteQueueWorkerReplace(unittest.TestCase):
                 (
                     "replace",
                     {
-                        "dst": "8.8.8.8",
+                        "dst": "203.0.113.8",
                         "dst_len": 32,
                         "nhid": 3,
+                        "proto": DNS_PROTO,
+                        "priority": DNS_METRIC,
                     },
                 )
             )
@@ -57,14 +61,12 @@ class TestRouteQueueWorkerReplace(unittest.TestCase):
         )
         call_args = mock_subprocess_run.call_args
         self.assertEqual(call_args[0][0], ["ip", "-batch", "-"])
-        batch_input = (
-            call_args[1].get("input", "") or call_args[0][1]
-            if len(call_args[0]) > 1
-            else call_args[1].get("input", "")
-        )
         # input is a keyword arg
         batch_input = call_args[1]["input"]
-        self.assertIn("route replace 8.8.8.8/32 nhid 3 table 200", batch_input)
+        self.assertIn(
+            "route replace 203.0.113.8/32 nhid 3 table 200 proto 250 metric 200",
+            batch_input,
+        )
 
 
 if __name__ == "__main__":

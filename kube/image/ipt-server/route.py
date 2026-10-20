@@ -10,6 +10,17 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+# Kernel route classes (#68). The kernel FIB key is (table, dst, tos,
+# priority): distinct metric+proto pairs are distinct FIB entries, so a
+# config static route and a DNS-learned route for the same prefix coexist
+# (the lower STATIC metric wins), and every kernel delete carries
+# proto+metric so a DNS expiry can only remove its own entry.
+RTPROT_STATIC = 4
+STATIC_PROTO = RTPROT_STATIC
+STATIC_METRIC = 100
+DNS_PROTO = 250  # "garuda-dns" — /etc/iproute2/rt_protos.d/garuda.conf
+DNS_METRIC = 200
+
 
 @dataclass
 class RouteObject:
@@ -48,6 +59,8 @@ class RouteObject:
     @property
     def expired(self) -> bool:
         """Return whether route TTL-based expiration time has passed."""
+        if self.proto == STATIC_PROTO:
+            return False  # config static routes never expire (#68)
         if self.expiration is None:
             return False
         return datetime.now() > self.expiration
