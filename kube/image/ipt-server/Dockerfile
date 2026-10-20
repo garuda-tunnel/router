@@ -19,10 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     frr \
     && rm -rf /var/lib/apt/lists/*
 
-# Route-class proto name so `ip route` shows "garuda-dns" instead of 250 (#68).
-RUN mkdir -p /etc/iproute2/rt_protos.d \
-    && echo "250 garuda-dns" > /etc/iproute2/rt_protos.d/garuda.conf
-
 # Copy only requirements.txt first to leverage Docker cache
 COPY requirements.txt .
 

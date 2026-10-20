@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 RTPROT_STATIC = 4
 STATIC_PROTO = RTPROT_STATIC
 STATIC_METRIC = 100
-DNS_PROTO = 250  # "garuda-dns" — /etc/iproute2/rt_protos.d/garuda.conf
+DNS_PROTO = 250  # DNS-learned route class; `ip route` shows "proto 250"
 DNS_METRIC = 200
 
 
