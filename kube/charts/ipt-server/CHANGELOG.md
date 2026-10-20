@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/garuda-tunnel/router-internal/compare/v1.3.2...v1.3.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ipt-server:** separate static and DNS routes by kernel route class ([#69](https://github.com/garuda-tunnel/router-internal/issues/69)) ([8d254bb](https://github.com/garuda-tunnel/router-internal/commit/8d254bb0c3e09020b0d1583d966abaa059bc69dc))
+
 ## [1.3.2](https://github.com/garuda-tunnel/router-internal/compare/v1.3.1...v1.3.2) (2026-10-20)
 
 
