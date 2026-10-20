@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/garuda-tunnel/router-internal/compare/v1.2.9...v1.3.0) (2026-10-20)
+
+
+### Features
+
+* **ipt-server:** optional Recursor settings drop-in ([#59](https://github.com/garuda-tunnel/router-internal/issues/59)) ([73b28d7](https://github.com/garuda-tunnel/router-internal/commit/73b28d7732974dc8b7da0b699334220c2f25dbf7))
+
 ## [1.2.9](https://github.com/garuda-tunnel/router-internal/compare/v1.2.8...v1.2.9) (2026-07-05)
 
 
