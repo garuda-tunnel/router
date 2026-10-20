@@ -31,45 +31,49 @@ class Router:
             self._shutdown_event.wait(timeout=self._cleanup_interval)
             if self._shutdown_event.is_set():
                 break
-            with self._routes_lock:
-                expired_intervals = [
-                    interval for interval in self._route_tree if interval.data.expired
-                ]
+            self._cleanup_pass()
 
-                if not expired_intervals:
-                    continue
+    def _cleanup_pass(self):
+        """Run one expiry sweep: remove expired routes with no active conntrack entries."""
+        with self._routes_lock:
+            expired_intervals = [
+                interval for interval in self._route_tree if interval.data.expired
+            ]
 
-                # Track which expired intervals have active connections
-                intervals_to_keep = set()
+            if not expired_intervals:
+                return
 
-                try:
-                    for entry in self._conntrack.dump_entries():
-                        try:
-                            src_addr = int(ipaddress.ip_address(entry.tuple_orig.saddr))
-                            dst_addr = int(ipaddress.ip_address(entry.tuple_orig.daddr))
+            # Track which expired intervals have active connections
+            intervals_to_keep = set()
 
-                            # Check each expired interval to see if it contains this connection
-                            for interval in expired_intervals:
-                                if (
-                                    interval.begin <= src_addr < interval.end
-                                    or interval.begin <= dst_addr < interval.end
-                                ):
-                                    intervals_to_keep.add(interval)
-                                    # Once we know we're keeping this interval, no need to check it again
-                                    break
-                        except Exception as e:
-                            logger.debug(f"Error processing conntrack entry: {e}")
-                except Exception as e:
-                    logger.warning(f"Error accessing conntrack entries: {e}")
+            try:
+                for entry in self._conntrack.dump_entries():
+                    try:
+                        src_addr = int(ipaddress.ip_address(entry.tuple_orig.saddr))
+                        dst_addr = int(ipaddress.ip_address(entry.tuple_orig.daddr))
 
-                # Process each expired interval
-                for interval in expired_intervals:
-                    if interval not in intervals_to_keep:
-                        # No active connections, remove the route
-                        self._route_tree.remove(interval)
-                        route_spec = interval.data.route_spec
-                        self._route_queue.put(("del", route_spec))
-                        logger.info(f"Removed expired route: {interval.data.net}")
+                        # Check each expired interval to see if it contains this connection
+                        for interval in expired_intervals:
+                            if (
+                                interval.begin <= src_addr < interval.end
+                                or interval.begin <= dst_addr < interval.end
+                            ):
+                                intervals_to_keep.add(interval)
+                                # Once we know we're keeping this interval, no need to check it again
+                                break
+                    except Exception as e:
+                        logger.debug(f"Error processing conntrack entry: {e}")
+            except Exception as e:
+                logger.warning(f"Error accessing conntrack entries: {e}")
+
+            # Process each expired interval
+            for interval in expired_intervals:
+                if interval not in intervals_to_keep:
+                    # No active connections, remove the route
+                    self._route_tree.remove(interval)
+                    route_spec = interval.data.route_spec
+                    self._route_queue.put(("del", route_spec))
+                    logger.info(f"Removed expired route: {interval.data.net}")
 
     def remove_conntrack_entries_for_destination(self, destination: IntervalTree):
         """
@@ -173,7 +177,14 @@ class Router:
                     and interval.data.gw == route.gw
                     and interval.data.nhid == route.nhid
                 ):
-                    interval.data.reset_expiration(route.ttl)
+                    if interval.data.ttl is None or route.ttl is None:
+                        # A permanent route (ttl=None) never gains an
+                        # expiration: whichever side is permanent wins, so a
+                        # DNS-TTL refresh cannot expire a static route (#61).
+                        interval.data.ttl = None
+                        interval.data.expiration = None
+                    else:
+                        interval.data.reset_expiration(route.ttl)
                     result = copy.deepcopy(interval.data)
                     outcome = "refresh"
                     break
