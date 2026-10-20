@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/garuda-tunnel/router-internal/compare/v1.3.1...v1.3.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ipt-server:** derive backbone subnet from the backbone interface ([#66](https://github.com/garuda-tunnel/router-internal/issues/66)) ([dc5e934](https://github.com/garuda-tunnel/router-internal/commit/dc5e934fb23cb1e22f59f645a74da61a364d73db))
+
 ## [1.3.1](https://github.com/garuda-tunnel/router-internal/compare/v1.3.0...v1.3.1) (2026-10-20)
 
 
