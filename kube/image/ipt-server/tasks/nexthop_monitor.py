@@ -10,9 +10,12 @@ import asyncio
 import ipaddress
 import json
 import logging
+import socket
 import urllib.error
 import urllib.request
 from typing import Optional
+
+from pyroute2 import IPRoute
 
 from ipt_server import state
 import nexthop
@@ -31,23 +34,95 @@ _VTY_BRIDGE_TIMEOUT = 5
 # tasks/periodic.py). Generous headroom over the worst-case probe latency.
 _TICK_TIMEOUT_SECONDS = 60
 
-# The OSPF backbone transit subnet. The directly-attached fallback in
-# _resolve_direct_router_nexthop may only return an address on this subnet as a
-# kernel gateway (never a tunnel-edge WireGuard P2P IP, which the kernel rejects
-# with "Nexthop has invalid gateway"). See spec §6.1 (Fix 8).
-_BACKBONE_SUBNET = ipaddress.ip_network("172.30.0.0/24")
+# The OSPF backbone transit subnets, derived at runtime from the IPv4
+# addresses on the pod's PBR interfaces (state.CONFIG.interfaces, i.e. the
+# IPT_INTERFACES_JSON entry; default ["backbone"]). Consumers configure this
+# subnet freely (mini-site backbone_subnet; stands may run 192.0.2.0/26 or
+# 172.30.0.0/24), so it must not be hardcoded. Refreshed once per monitor
+# tick by _refresh_backbone_subnets(); empty (interface missing or without an
+# address) makes _is_on_backbone fail closed, same as for off-subnet
+# addresses. The directly-attached fallback in _resolve_direct_router_nexthop
+# may only return an address on these subnets as a kernel gateway (never a
+# tunnel-edge WireGuard P2P IP, which the kernel rejects with "Nexthop has
+# invalid gateway"). See spec §6.1 (Fix 8) and #65.
+_BACKBONE_SUBNETS: tuple[ipaddress.IPv4Network, ...] = ()
+# True while the current empty stretch of _BACKBONE_SUBNETS has already been
+# WARNING-logged (the warning fires once per transition, not every tick).
+_LOGGED_EMPTY_BACKBONE = False
+
+
+def _pbr_interface_names() -> tuple[str, ...]:
+    """Return the configured PBR interface names (default: ("backbone",))."""
+    interfaces = getattr(state.CONFIG, "interfaces", None)
+    return tuple(interfaces) if interfaces else ("backbone",)
+
+
+def _backbone_addr_prefixes() -> list[tuple[str, int]]:
+    """Read (address, prefixlen) for every IPv4 address on the PBR interfaces."""
+    prefixes: list[tuple[str, int]] = []
+    with IPRoute() as ipr:
+        for name in _pbr_interface_names():
+            for index in ipr.link_lookup(ifname=name):
+                for addr in ipr.get_addr(index=index, family=socket.AF_INET):
+                    local = addr.get_attr("IFA_LOCAL") or addr.get_attr("IFA_ADDRESS")
+                    if local:
+                        prefixes.append((local, addr["prefixlen"]))
+    return prefixes
+
+
+def _refresh_backbone_subnets() -> None:
+    """Recompute _BACKBONE_SUBNETS from the PBR interfaces' IPv4 addresses.
+
+    Re-run at the start of every monitor tick (the interface may appear after
+    process start; the lookup is cheap). Any failure or empty result leaves
+    the subnets empty, so _is_on_backbone fails closed. Visibility (#65): a
+    transition to empty logs one WARNING (a silent empty set is exactly how
+    the blackhole went unnoticed), and a subnet change logs one INFO listing
+    the new subnets; neither repeats while the state is unchanged.
+    """
+    global _BACKBONE_SUBNETS, _LOGGED_EMPTY_BACKBONE
+    try:
+        subnets = []
+        for local, prefixlen in _backbone_addr_prefixes():
+            try:
+                subnets.append(ipaddress.ip_interface(f"{local}/{prefixlen}").network)
+            except ValueError:
+                logger.debug("ignoring malformed address %s/%s", local, prefixlen)
+        new_subnets = tuple(subnets)
+    except Exception as exc:
+        logger.debug("backbone subnet derivation failed: %s", exc)
+        new_subnets = ()
+
+    if not new_subnets:
+        if not _LOGGED_EMPTY_BACKBONE:
+            logger.warning(
+                "no backbone subnet found on PBR interfaces %s — on-backbone "
+                "neighbours will not resolve until an IPv4 address appears "
+                "(#65)",
+                ", ".join(_pbr_interface_names()),
+            )
+            _LOGGED_EMPTY_BACKBONE = True
+    else:
+        _LOGGED_EMPTY_BACKBONE = False
+        if new_subnets != _BACKBONE_SUBNETS:
+            logger.info(
+                "backbone subnets now: %s",
+                ", ".join(str(net) for net in new_subnets),
+            )
+    _BACKBONE_SUBNETS = new_subnets
 
 
 def _is_on_backbone(address: str) -> bool:
-    """Return True iff *address* is on the OSPF backbone subnet (172.30.0.0/24).
+    """Return True iff *address* is on a backbone interface subnet.
 
     Used to guard the directly-attached fallback so it can only ever return a
     valid on-backbone gateway, never a tunnel-edge P2P IP.
     """
     try:
-        return ipaddress.ip_address(address) in _BACKBONE_SUBNET
+        addr = ipaddress.ip_address(address)
     except ValueError:
         return False
+    return any(addr in subnet for subnet in _BACKBONE_SUBNETS)
 
 
 def _vtysh(command: str) -> Optional[dict]:
@@ -290,10 +365,10 @@ def _edge_p2p_adjacency_healthy(
         its /24 is still on-link via the still-up hub-side wg interface.
 
     Discriminator: an edge tunnel gw is a CGNAT 10.x P2P WireGuard address,
-    never on the 172.30.0.0/24 backbone. Backbone gws (border/transit) return
-    None and take the directly-attached path; off-backbone gws are always
-    edge-gated (True/False), so a dead edge whose gw resolves ONLY via the
-    hub-side pod's lingering /24 stub is correctly judged DEAD (issue #37),
+    never on the backbone interface subnets. Backbone gws (border/transit)
+    return None and take the directly-attached path; off-backbone gws are
+    always edge-gated (True/False), so a dead edge whose gw resolves ONLY via
+    the hub-side pod's lingering /24 stub is correctly judged DEAD (issue #37),
     never leaking into the directly-attached path.
 
     Why this is correct where the rolled-back direct-neighbor-Full gate failed:
@@ -563,6 +638,10 @@ def _tick(
         consecutive_failures: gw str -> consecutive probe failure count (mutated).
         first_tick: if True, seed state without issuing any replace calls.
     """
+    # The backbone interface (and its address) may appear after process
+    # start, so re-derive the backbone subnets on every tick (#65).
+    _refresh_backbone_subnets()
+
     for desc, group_nhid in nhg_registry.items():
         # Probe each member and collect new liveness state
         new_alive: dict[tuple, bool] = {}

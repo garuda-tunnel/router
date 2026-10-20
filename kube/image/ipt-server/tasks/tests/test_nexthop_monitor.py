@@ -1635,3 +1635,295 @@ class TestEdgeReciprocalP2pAdjacency:
         assert _edge_p2p_adjacency_healthy(
             "10.9.21.2", HS_ROUTER_LSDB_ALIVE, neighbors_no_de_hub
         ) is False
+
+
+# ---------------------------------------------------------------------------
+# issue #65: the backbone subnet is derived at runtime from the IPv4
+# addresses on the pod's PBR interfaces (IPT_INTERFACES_JSON / Config,
+# default ["backbone"]) — not hardcoded 172.30.0.0/24. The local stand runs
+# 192.0.2.0/26 on its backbone interface; a hardcoded /24 never matches it,
+# so the border neighbour is never resolved and its group is blackholed.
+# ---------------------------------------------------------------------------
+
+import ipaddress
+
+from types import SimpleNamespace
+
+import tasks.nexthop_monitor as nm
+from tasks.nexthop_monitor import (
+    _is_on_backbone,
+    _probe_gw_alive,
+    _resolve_direct_router_nexthop,
+    _tick,
+)
+
+
+class TestBackboneSubnetFromInterface:
+    """Backbone membership follows the PBR interface's configured subnets."""
+
+    def _refresh(self, prefixes, interfaces=None):
+        cfg = SimpleNamespace(
+            interfaces=interfaces if interfaces is not None else ["backbone"]
+        )
+        with (
+            patch("ipt_server.state.CONFIG", cfg),
+            patch(
+                "tasks.nexthop_monitor._backbone_addr_prefixes",
+                return_value=list(prefixes),
+            ),
+        ):
+            nm._refresh_backbone_subnets()
+
+    def test_member_on_derived_192_0_2_26_subnet(self):
+        """192.0.2.3 is on backbone when the backbone interface runs 192.0.2.0/26."""
+        self._refresh([("192.0.2.10", 26)])
+        assert _is_on_backbone("192.0.2.3") is True
+        assert _is_on_backbone("192.0.2.63") is True
+        assert _is_on_backbone("192.0.2.64") is False, "outside the /26"
+        # The old hardcoded subnet must no longer qualify on its own.
+        assert _is_on_backbone("172.30.0.6") is False
+
+    def test_derived_subnet_resolves_direct_neighbour(self):
+        """#65 repro: a direct neighbour 192.0.2.3 on the derived /26 backbone
+        is alive and resolvable via the directly-attached fallback."""
+        self._refresh([("192.0.2.10", 26)])
+        router_lsdb = {
+            "routerLinkStates": {
+                "areas": {
+                    "0.0.0.0": [
+                        {
+                            "advertisingRouter": "10.130.30.30",
+                            "routerLinks": {
+                                "link0": {
+                                    "linkType": "a Transit Network",
+                                    "routerInterfaceAddress": "192.0.2.3",
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        }
+        rib = {
+            "192.0.2.0/26": {
+                "transit": True,
+                "nexthops": [{"ip": " ", "directlyAttachedTo": "backbone"}],
+            },
+        }
+        neighbors = {
+            "neighbors": {
+                "10.130.30.30": [
+                    {
+                        "state": "Full/-",
+                        "address": "192.0.2.3",
+                        "ifaceName": "backbone",
+                    },
+                ],
+            },
+        }
+
+        def side_effect(command):
+            if "database router" in command:
+                return router_lsdb
+            if "database external" in command:
+                return {"asExternalLinkStates": []}
+            if "ospf neighbor" in command:
+                return neighbors
+            if "ospf route" in command:
+                return rib
+            return None
+
+        with patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect):
+            alive, via, dev = _probe_gw_alive("192.0.2.3")
+
+        assert alive is True, (
+            "#65: a direct neighbour on the configured backbone subnet must "
+            "resolve, not blackhole its group"
+        )
+        assert via == "192.0.2.3"
+        assert dev == "backbone"
+
+    def test_default_172_30_slash24_stand_still_works(self):
+        """A stand actually running 172.30.0.0/24 on its backbone interface
+        keeps today's behaviour through the derived path."""
+        self._refresh([("172.30.0.9", 24)])
+        assert _is_on_backbone("172.30.0.6") is True
+        # border directly-attached fallback (Fix 8 fixture) still resolves
+        assert _resolve_direct_router_nexthop(
+            "10.130.30.50", VXXLCX_ROUTER_LSDB, VXXLCX_RIB
+        ) == ("172.30.0.38", "backbone")
+
+    def test_p2p_tunnel_ip_outside_interface_subnet_rejected(self):
+        """A tunnel-edge P2P IP outside the derived subnet is never a valid
+        fallback gateway (Fix 8 guarantee under derived subnets)."""
+        self._refresh([("192.0.2.10", 26)])
+        assert _is_on_backbone("10.9.19.2") is False
+        rib = {
+            "10.9.19.0/28": {
+                "nexthops": [
+                    {"ip": " ", "directlyAttachedTo": "backbone"},
+                ]
+            },
+        }
+        # usa edge 10.130.30.23 only advertises tunnel IP 10.9.19.2; the
+        # blank-.ip fallback must refuse it -> None.
+        assert (
+            _resolve_direct_router_nexthop("10.130.30.23", VXXLCX_ROUTER_LSDB, rib)
+            is None
+        )
+
+    def test_no_interface_address_fails_closed(self):
+        """No backbone interface / no address -> nothing is on backbone."""
+        self._refresh([])
+        assert _is_on_backbone("172.30.0.6") is False
+        assert _is_on_backbone("192.0.2.3") is False
+
+    def test_tick_re_evaluates_subnets_each_tick(self):
+        """_tick refreshes the derived subnets every tick (the interface may
+        appear after start)."""
+        reader = MagicMock(return_value=[("192.0.2.10", 26)])
+        desc = _make_desc({"gw": "10.9.19.2"})
+        with (
+            patch("tasks.nexthop_monitor._backbone_addr_prefixes", reader),
+            patch(
+                "tasks.nexthop_monitor._probe_gw_alive",
+                return_value=(False, None, None),
+            ),
+            patch("nexthop.replace_nexthop_blackhole", MagicMock()),
+            patch("nexthop.replace_group", MagicMock()),
+        ):
+            _tick({desc: 4}, {("10.9.19.2", None): 1}, {}, {}, {}, first_tick=True)
+            _tick({desc: 4}, {("10.9.19.2", None): 1}, {}, {}, {}, first_tick=False)
+
+        assert reader.call_count == 2, "subnets must be re-derived every tick"
+
+
+class TestBackboneSubnetRefreshLogging:
+    """PR #66 review: a silent empty _BACKBONE_SUBNETS blackholes backbone
+    neighbours with no visible log (exactly how #65 went unnoticed). The
+    refresh must WARN once on the transition to empty and INFO once per
+    subnet change — not once per tick."""
+
+    def _refresh(self, prefixes):
+        cfg = SimpleNamespace(interfaces=["backbone"])
+        with (
+            patch("ipt_server.state.CONFIG", cfg),
+            patch(
+                "tasks.nexthop_monitor._backbone_addr_prefixes",
+                return_value=list(prefixes),
+            ),
+        ):
+            nm._refresh_backbone_subnets()
+
+    def _refresh_raises(self, exc):
+        cfg = SimpleNamespace(interfaces=["backbone"])
+        with (
+            patch("ipt_server.state.CONFIG", cfg),
+            patch("tasks.nexthop_monitor._backbone_addr_prefixes", side_effect=exc),
+        ):
+            nm._refresh_backbone_subnets()
+
+    def test_warns_once_on_transition_to_empty(self, caplog):
+        import logging as _l
+
+        with caplog.at_level(_l.WARNING, logger="tasks.nexthop_monitor"):
+            self._refresh([])  # transition to empty -> one WARNING
+            self._refresh([])  # still empty -> no repeat
+            warnings = [r for r in caplog.records if r.levelno == _l.WARNING]
+            assert len(warnings) == 1, "empty backbone must WARN once, not per tick"
+            assert "backbone" in warnings[0].getMessage()
+
+            self._refresh([("192.0.2.10", 26)])  # recovers -> arm the flag again
+            self._refresh([])  # a NEW empty stretch warns again
+            warnings = [r for r in caplog.records if r.levelno == _l.WARNING]
+            assert len(warnings) == 2, "re-emptying after recovery must WARN again"
+
+    def test_warns_once_when_derivation_fails(self, caplog):
+        import logging as _l
+
+        with caplog.at_level(_l.WARNING, logger="tasks.nexthop_monitor"):
+            self._refresh_raises(RuntimeError("netlink down"))
+            self._refresh_raises(RuntimeError("netlink down"))
+        warnings = [r for r in caplog.records if r.levelno == _l.WARNING]
+        assert len(warnings) == 1, "a failing derivation must WARN once"
+
+    def test_logs_info_once_when_subnets_change(self, caplog):
+        import logging as _l
+
+        with caplog.at_level(_l.INFO, logger="tasks.nexthop_monitor"):
+            self._refresh([("192.0.2.10", 26)])
+            self._refresh([("192.0.2.10", 26)])  # unchanged -> no repeat
+            self._refresh([("172.30.0.9", 24)])  # change -> INFO again
+        infos = [
+            r.getMessage()
+            for r in caplog.records
+            if r.levelno == _l.INFO
+            and ("192.0.2.0/26" in r.getMessage() or "172.30.0.0/24" in r.getMessage())
+        ]
+        assert len(infos) == 2, f"expected one INFO per change, got: {infos}"
+        assert "192.0.2.0/26" in infos[0]
+        assert "172.30.0.0/24" in infos[1]
+
+
+class TestBackboneAddrPrefixReader:
+    """_backbone_addr_prefixes maps pyroute2 netlink state to (addr, prefixlen)
+    pairs for the configured PBR interfaces only."""
+
+    class _FakeAddr(dict):
+        def __init__(self, prefixlen, local):
+            super().__init__(prefixlen=prefixlen)
+            self._local = local
+
+        def get_attr(self, name):
+            return self._local if name in ("IFA_LOCAL", "IFA_ADDRESS") else None
+
+    class _FakeIPRoute:
+        def __init__(self, addr_map):
+            self._map = addr_map
+            self._index = {name: i + 1 for i, name in enumerate(addr_map)}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def link_lookup(self, ifname):
+            return [self._index[ifname]] if ifname in self._index else []
+
+        def get_addr(self, index, family):
+            name = next(n for n, i in self._index.items() if i == index)
+            return [
+                TestBackboneAddrPrefixReader._FakeAddr(plen, addr)
+                for addr, plen in self._map[name]
+            ]
+
+    def test_reads_all_configured_pbr_interfaces(self):
+        fake = self._FakeIPRoute(
+            {"backbone": [("192.0.2.10", 26)], "border": [("172.30.0.9", 24)]}
+        )
+        cfg = SimpleNamespace(interfaces=["backbone", "border"])
+        with (
+            patch("ipt_server.state.CONFIG", cfg),
+            patch("tasks.nexthop_monitor.IPRoute", return_value=fake),
+        ):
+            prefixes = nm._backbone_addr_prefixes()
+        assert sorted(prefixes) == [("172.30.0.9", 24), ("192.0.2.10", 26)]
+
+    def test_defaults_to_backbone_without_config(self):
+        fake = self._FakeIPRoute({"backbone": [("172.30.0.9", 24)]})
+        with (
+            patch("ipt_server.state.CONFIG", None),
+            patch("tasks.nexthop_monitor.IPRoute", return_value=fake),
+        ):
+            prefixes = nm._backbone_addr_prefixes()
+        assert prefixes == [("172.30.0.9", 24)]
+
+    def test_missing_interface_yields_nothing(self):
+        fake = self._FakeIPRoute({})
+        cfg = SimpleNamespace(interfaces=["backbone"])
+        with (
+            patch("ipt_server.state.CONFIG", cfg),
+            patch("tasks.nexthop_monitor.IPRoute", return_value=fake),
+        ):
+            assert nm._backbone_addr_prefixes() == []
