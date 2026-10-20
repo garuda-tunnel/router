@@ -16,6 +16,7 @@ is preserved; only the runtime plane shifts to Kubernetes.
 | `name` | no | Deployment name. Default `ipt-server`. |
 | `ipt_server_image` | no  | Image reference for the `garuda_ipt` container. Empty ⇒ use the chart's pinned digest. |
 | `powerdns_image`   | no  | Image reference for the powerdns recursor container. Empty ⇒ use the chart's pinned digest. |
+| `powerdns_extra_config` | no | Raw PowerDNS Recursor YAML drop-in (e.g. `forward_zones_recurse`, `dnssec.negative_trustanchors`). Default `""` ⇒ no drop-in. |
 | `frr_image` | no (deprecated) | DEPRECATED: frr-sidecar is now MAP-injected. Inert; kept to avoid breaking callers. |
 | `routes` | no | Route configuration list (`IPT_ROUTES_JSON`). |
 | `pbr_interfaces` | no | Backbone-side PBR interfaces (`IPT_INTERFACES_JSON`). Default `["backbone"]`. |

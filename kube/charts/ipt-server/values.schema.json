@@ -57,6 +57,14 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "powerdns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extraConfig"],
+      "properties": {
+        "extraConfig": { "type": "string" }
+      }
+    },
     "ospf": {
       "type": ["object", "null"],
       "additionalProperties": false,

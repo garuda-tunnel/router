@@ -6,6 +6,8 @@ incoming:
 recursor:
   extended_resolution_errors: true
   lua_dns_script: /etc/powerdns/hook.lua
+  # Drop-ins are supplied by the chart (powerdns.extraConfig); the upstream launcher only writes there when PDNS_RECURSOR_API_KEY/TEMPLATE_FILES are set, which the chart does not set.
+  include_dir: /etc/powerdns/recursor.d
 
 recordcache:
   max_negative_ttl: 300     # was 3600

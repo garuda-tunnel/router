@@ -14,7 +14,7 @@ GOLDEN_DIR="${SCRIPT_DIR}/../golden"
 # Keep the call so adding a new dependency does not require script changes.
 helm dependency update "${CHART_DIR}"
 
-for scenario in default with-ospf; do
+for scenario in default with-ospf with-extra-config; do
   values_file="${SCRIPT_DIR}/values-${scenario}.yaml"
   helm lint "${CHART_DIR}" -f "${values_file}"
 

@@ -21,6 +21,9 @@ spec:
         {{- end }}
       annotations:
         garuda.env-config/checksum: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- if .Values.powerdns.extraConfig }}
+        garuda.powerdns-extra/checksum: {{ .Values.powerdns.extraConfig | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -77,3 +80,16 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 30
             timeoutSeconds: 10
+          {{- if .Values.powerdns.extraConfig }}
+          volumeMounts:
+            - name: powerdns-extra
+              mountPath: /etc/powerdns/recursor.d/50-extra.yml
+              subPath: 50-extra.yml
+              readOnly: true
+          {{- end }}
+      {{- if .Values.powerdns.extraConfig }}
+      volumes:
+        - name: powerdns-extra
+          configMap:
+            name: {{ .Values.name }}-powerdns-extra
+      {{- end }}

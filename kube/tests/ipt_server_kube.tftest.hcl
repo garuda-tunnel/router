@@ -378,3 +378,35 @@ run "mixed_image_vars_partial_override" {
     error_message = "with empty frr_image, the frr key must be omitted"
   }
 }
+
+run "powerdns_extra_config_default_passes_nothing" {
+  command = plan
+
+  assert {
+    condition     = !strcontains(helm_release.ipt_server.values[0], "extraConfig")
+    error_message = "empty powerdns_extra_config must not pass powerdns.extraConfig so an older chart (no powerdns key in schema) still validates on module ?ref bump"
+  }
+}
+
+run "powerdns_extra_config_set_passes_through_verbatim" {
+  command = plan
+
+  variables {
+    powerdns_extra_config = "recursor:\n  forward_zones_recurse:\n    - zone: stand.example.net\n      forwarders:\n        - 192.0.2.53:53\n"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "\"powerdns\":")
+    error_message = "set powerdns_extra_config must render a powerdns key in helm values"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "\"extraConfig\": |")
+    error_message = "powerdns_extra_config must reach the chart as a powerdns.extraConfig literal block"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.ipt_server.values[0], "- zone: stand.example.net") && strcontains(helm_release.ipt_server.values[0], "- 192.0.2.53:53")
+    error_message = "powerdns_extra_config must reach the chart verbatim (zone and RFC5737 forwarder preserved)"
+  }
+}

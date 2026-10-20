@@ -1,0 +1,37 @@
+namespace: garuda
+name: ipt-server
+images:
+  iptServer: ghcr.io/garuda-tunnel/garuda-ipt-server:latest
+  powerdns: ghcr.io/garuda-tunnel/garuda-powerdns:latest
+routes:
+  - route:
+      - gw: 192.0.2.130
+      - dev: border
+    rules:
+      - ".*"
+      - "0.0.0.0/0"
+pbrInterfaces:
+  - backbone
+nicAttach:
+  - backbone
+  - border
+cleanConntrack: false
+domainRouteTtl: 300
+pinningEgress: {}
+pinningTtl: 86400
+pinningApiPort: 80
+mtuPolicy:
+  fixedMss: 1240
+  mssClampEnabled: true
+labels: {}
+ospf: null
+powerdns:
+  # Raw Recursor YAML drop-in rendered verbatim as 50-extra.yml
+  # (example.net zone, RFC5737 forwarder).
+  extraConfig: |
+    recursor:
+      forward_zones_recurse:
+        # stand zone is resolved by the site resolver, not recursion
+        - zone: stand.example.net
+          forwarders:
+            - 192.0.2.53:53

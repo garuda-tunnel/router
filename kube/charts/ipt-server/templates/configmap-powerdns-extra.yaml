@@ -1,0 +1,13 @@
+{{- if .Values.powerdns.extraConfig }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-powerdns-extra
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "iptServer.labels" . | nindent 4 }}
+data:
+  # Raw Recursor YAML drop-in; the Recursor validates it at start.
+  50-extra.yml: |
+{{- .Values.powerdns.extraConfig | nindent 4 }}
+{{- end }}

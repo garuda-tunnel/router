@@ -37,6 +37,12 @@ variable "powerdns_image" {
   default     = ""
 }
 
+variable "powerdns_extra_config" {
+  description = "Raw PowerDNS Recursor YAML settings merged as a drop-in (e.g. forward_zones_recurse, dnssec.negative_trustanchors). The Recursor validates them at start. Empty ⇒ no drop-in."
+  type        = string
+  default     = ""
+}
+
 variable "frr_image" {
   # DEPRECATED (Decision #5 — Phase 4+5): frr-sidecar is now MAP-injected; this variable is inert.
   # Callers may keep passing it without breaking anything. Will be removed in a future cleanup phase.

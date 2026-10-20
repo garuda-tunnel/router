@@ -23,5 +23,9 @@ mtuPolicy:
 labels: {}
 podLabels: {}
 podAnnotations: {}
+# Raw PowerDNS Recursor YAML settings rendered verbatim as a drop-in
+# (50-extra.yml) merged into the recursor config. Empty = no drop-in.
+powerdns:
+  extraConfig: ""
 # ospf: kept for back-compat (callers may still pass it; no-op now that frr-sidecar is MAP-injected).
 ospf: null

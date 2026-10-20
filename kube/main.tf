@@ -10,6 +10,13 @@ locals {
     var.powerdns_image == "" ? {} : { powerdns = var.powerdns_image },
     # frr key dropped: frr-sidecar is now MAP-injected (Decision #5 — var.frr_image kept inert below).
   )
+
+  # Pass powerdns.extraConfig only when set: an older chart without the
+  # powerdns key in values.schema.json rejects any powerdns value, so the
+  # default must render no key at all (module ?ref bump without chart bump).
+  powerdns_values = var.powerdns_extra_config == "" ? {} : {
+    powerdns = { extraConfig = var.powerdns_extra_config }
+  }
 }
 
 resource "kubernetes_config_map" "garuda_extra" {
@@ -38,28 +45,31 @@ resource "helm_release" "ipt_server" {
   dependency_update = true
 
   values = [
-    yamlencode({
-      namespace      = var.namespace
-      name           = var.name
-      images         = local.images_override
-      routes         = var.routes
-      pbrInterfaces  = var.pbr_interfaces
-      nicAttach      = var.nic_attach
-      cleanConntrack = var.clean_conntrack
-      domainRouteTtl = var.domain_route_ttl
-      pinningEgress  = var.pinning_egress
-      pinningTtl     = var.pinning_ttl
-      pinningApiPort = var.pinning_api_port
-      mtuPolicy      = {
-        fixedMss        = local.fixed_mss
-        mssClampEnabled = local.mss_clamp_enabled
-      }
-      # podLabels/podAnnotations: pass garuda_guest outputs to chart pod template (Decision #2).
-      podLabels      = var.labels
-      podAnnotations = var.annotations
-      labels         = var.labels
-      ospf           = var.ospf
-    })
+    yamlencode(merge(
+      {
+        namespace      = var.namespace
+        name           = var.name
+        images         = local.images_override
+        routes         = var.routes
+        pbrInterfaces  = var.pbr_interfaces
+        nicAttach      = var.nic_attach
+        cleanConntrack = var.clean_conntrack
+        domainRouteTtl = var.domain_route_ttl
+        pinningEgress  = var.pinning_egress
+        pinningTtl     = var.pinning_ttl
+        pinningApiPort = var.pinning_api_port
+        mtuPolicy = {
+          fixedMss        = local.fixed_mss
+          mssClampEnabled = local.mss_clamp_enabled
+        }
+        # podLabels/podAnnotations: pass garuda_guest outputs to chart pod template (Decision #2).
+        podLabels      = var.labels
+        podAnnotations = var.annotations
+        labels         = var.labels
+        ospf           = var.ospf
+      },
+      local.powerdns_values
+    ))
   ]
 
   depends_on = [kubernetes_config_map.garuda_extra]
