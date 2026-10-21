@@ -1714,6 +1714,141 @@ class TestEdgeReciprocalP2pAdjacency:
 
 
 # ---------------------------------------------------------------------------
+# DROther↔DROther 2-Way hub-side leg on the broadcast backbone segment.
+#
+# On a broadcast (DR-electing) segment only DR/BDR pairs form Full
+# adjacencies; two DROther routers legitimately stay in 2-Way forever — a
+# stable, correct state, not an outage. When the DR/BDR election leaves both
+# the hub ipt-server and an edge's hub-side pod as DROther, the hub's
+# neighbor dump shows that pod as "2-Way/DROther". The edge gate must accept
+# that state, but ONLY together with both reciprocal P2P router-LSAs, which
+# prove bidirectional reachability; Init/ExStart or a missing reciprocal LSA
+# stays dead. `_router_neighbor_is_full` itself stays Full-only: direct
+# gateway liveness (backbone/border owners) keeps requiring Full.
+# ---------------------------------------------------------------------------
+
+import copy
+
+
+class TestEdgeTwoWayDrotherHubLeg:
+    """The edge P2P gate accepts a 2-Way hub-side neighbor (the stable
+    DROther↔DROther state on a broadcast backbone segment) only when both
+    reciprocal P2P LSAs are present; Full stays healthy, Init/ExStart stay
+    dead."""
+
+    PT_GW = "10.9.19.2"  # pt edge P2P tunnel address (owning edge .23)
+    PT_HUB_POD = "10.130.30.20"  # the edge's hub-side pod on the backbone
+
+    @staticmethod
+    def _neighbors_with_hub_pod_state(nbr_state):
+        """HS_NEIGHBORS_ALIVE with the pt-hub pod .20's adjacency state
+        replaced. Only .20 is on this gw's decision path: the owner .23 is
+        never a direct neighbor, and the edge gate checks the hub-side pod."""
+        neighbors = {
+            rid: [dict(entry) for entry in entries]
+            for rid, entries in HS_NEIGHBORS_ALIVE["neighbors"].items()
+        }
+        neighbors["10.130.30.20"] = [
+            {
+                "nbrState": nbr_state,
+                "ifaceName": "backbone",
+                "address": "172.30.0.17",
+            }
+        ]
+        return {"neighbors": neighbors}
+
+    @staticmethod
+    def _hub_pod_lsa(lsdb):
+        return next(
+            lsa
+            for lsa in lsdb["routerLinkStates"]["areas"]["0.0.0.0"]
+            if lsa["advertisingRouter"] == "10.130.30.20"
+        )
+
+    @classmethod
+    def _lsdb_without_reciprocal_hub_leg(cls):
+        """LSDB where the pt-hub pod .20 reoriginated WITHOUT its P2P link to
+        the edge (edge's own LSA still present, so the owner lookup still
+        resolves and only the reciprocal check can fail)."""
+        lsdb = copy.deepcopy(HS_ROUTER_LSDB_ALIVE)
+        cls._hub_pod_lsa(lsdb)["routerLinks"].pop("link1")
+        return lsdb
+
+    @staticmethod
+    def _lsdb_without_edge_lsa():
+        """LSDB where the pt-EDGE's own router-LSA has aged out."""
+        lsdb = copy.deepcopy(HS_ROUTER_LSDB_ALIVE)
+        area = lsdb["routerLinkStates"]["areas"]["0.0.0.0"]
+        area[:] = [
+            lsa for lsa in area if lsa["advertisingRouter"] != "10.130.30.23"
+        ]
+        return lsdb
+
+    def test_two_way_hub_leg_with_reciprocal_lsas_is_healthy(self):
+        """2-Way/DROther hub-side pod plus both reciprocal P2P LSAs -> the
+        live edge is healthy (DROther↔DROther is a stable adjacency state,
+        not an outage)."""
+        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+
+        assert _edge_p2p_adjacency_healthy(
+            self.PT_GW,
+            HS_ROUTER_LSDB_ALIVE,
+            self._neighbors_with_hub_pod_state("2-Way/DROther"),
+        ) is True
+
+    def test_two_way_hub_leg_with_one_reciprocal_lsa_missing_is_dead(self):
+        """2-Way alone proves only hellos: with either reciprocal P2P LSA
+        missing (hub-side link withdrawn, or the edge LSA aged out) the edge
+        is dead."""
+        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+
+        two_way = self._neighbors_with_hub_pod_state("2-Way/DROther")
+        assert _edge_p2p_adjacency_healthy(
+            self.PT_GW, self._lsdb_without_reciprocal_hub_leg(), two_way
+        ) is False
+        assert _edge_p2p_adjacency_healthy(
+            self.PT_GW, self._lsdb_without_edge_lsa(), two_way
+        ) is False
+
+    def test_two_way_gate_rejects_init_and_exstart(self):
+        """Init/ExStart hub-side states are forming/broken, not stable
+        adjacency: the edge is dead regardless of the LSDB."""
+        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+
+        for nbr_state in ("Init/DROther", "ExStart/DR"):
+            assert _edge_p2p_adjacency_healthy(
+                self.PT_GW,
+                HS_ROUTER_LSDB_ALIVE,
+                self._neighbors_with_hub_pod_state(nbr_state),
+            ) is False
+
+    def test_full_hub_leg_stays_healthy(self):
+        """Unchanged behavior: a Full hub-side pod with both reciprocal P2P
+        LSAs is healthy."""
+        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+
+        assert _edge_p2p_adjacency_healthy(
+            self.PT_GW,
+            HS_ROUTER_LSDB_ALIVE,
+            self._neighbors_with_hub_pod_state("Full/DROther"),
+        ) is True
+
+    def test_probe_keeps_primary_edge_when_hub_pod_is_two_way(self):
+        """End-to-end repro of the stand fault: with the DR/BDR election
+        leaving the pt-hub pod in 2-Way, the primary edge gw must stay ALIVE
+        with its backbone nexthop — previously this returned
+        (False, None, None) and failed egress over to the secondary edge at
+        steady state."""
+        with TestHubSpokeEdgeLivenessGate._patch_vtysh(
+            HS_ROUTER_LSDB_ALIVE,
+            self._neighbors_with_hub_pod_state("2-Way/DROther"),
+            HS_RIB_ALIVE,
+        ):
+            alive, via, dev = _probe_gw_alive(self.PT_GW)
+        assert (alive, via, dev) == (True, "172.30.0.17", "backbone")
+
+
+# ---------------------------------------------------------------------------
 # issue #65: the backbone subnet is derived at runtime from the IPv4
 # addresses on the pod's PBR interfaces (IPT_INTERFACES_JSON / Config,
 # default ["backbone"]) — not hardcoded 172.30.0.0/24. The local stand runs

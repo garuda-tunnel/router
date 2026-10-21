@@ -228,23 +228,17 @@ def _router_originates_default(
     return False
 
 
-def _router_neighbor_is_full(
-    router_id: str, neighbor_data: Optional[dict]
+def _router_neighbor_state_is(
+    router_id: str, neighbor_data: Optional[dict], state_prefix: str
 ) -> bool:
-    """Return True iff *router_id* is a DIRECT OSPF neighbor in Full state.
+    """Return True iff *router_id* is a DIRECT OSPF neighbor whose adjacency
+    state starts with *state_prefix* (e.g. ``"Full"``, ``"2-Way"``; FRR
+    reports role-suffixed states like ``"Full/DR"``, ``"2-Way/DROther"``).
 
     Reads the parsed JSON of ``show ip ospf neighbor json`` (same shape used
     by ``route_health.FrrVtyshOspfHealthSource``): a top-level ``neighbors``
     dict keyed by neighbor router-id, whose values are lists of entries each
-    carrying an OSPF adjacency ``state`` / ``nbrState`` (e.g. ``"Full/DR"``).
-
-    This is only meaningful for a router that is ONE OSPF hop away (a direct
-    neighbor on the backbone) — e.g. border or a hub-side wg pod. It is NOT a
-    valid liveness signal for a hub↔edge P2P WireGuard tunnel: the gw there is
-    owned by the FAR/edge router-id, which is TWO OSPF hops from the hub
-    ipt-server and is never a direct neighbor, so this returns always-False for
-    it (issue #37 regression). Edge liveness uses
-    ``_edge_p2p_adjacency_healthy`` instead.
+    carrying an OSPF adjacency ``state`` / ``nbrState``.
     """
     if not isinstance(neighbor_data, dict):
         return False
@@ -258,9 +252,26 @@ def _router_neighbor_is_full(
         if not isinstance(entry, dict):
             continue
         state = entry.get("nbrState") or entry.get("state")
-        if isinstance(state, str) and state.startswith("Full"):
+        if isinstance(state, str) and state.startswith(state_prefix):
             return True
     return False
+
+
+def _router_neighbor_is_full(
+    router_id: str, neighbor_data: Optional[dict]
+) -> bool:
+    """Return True iff *router_id* is a DIRECT OSPF neighbor in Full state.
+
+    This is only meaningful for a router that is ONE OSPF hop away (a direct
+    neighbor on the backbone) — e.g. border or a hub-side wg pod — and is the
+    gate for DIRECT gateway liveness, which keeps requiring Full. It is NOT a
+    valid liveness signal for a hub↔edge P2P WireGuard tunnel: the gw there is
+    owned by the FAR/edge router-id, which is TWO OSPF hops from the hub
+    ipt-server and is never a direct neighbor, so this returns always-False for
+    it (issue #37 regression). Edge liveness uses
+    ``_edge_p2p_adjacency_healthy`` instead.
+    """
+    return _router_neighbor_state_is(router_id, neighbor_data, "Full")
 
 
 def _find_edge_owning_p2p_address(
@@ -356,8 +367,10 @@ def _edge_p2p_adjacency_healthy(
         directly-attached + direct-neighbor path.
       * ``True``  — *gw* is an off-backbone (edge tunnel) address whose owning
         EDGE router-id holds a BIDIRECTIONAL P2P adjacency with a hub-side
-        router that is itself a Full DIRECT OSPF neighbor of the hub
-        ipt-server. The edge is alive.
+        router that is itself an ADJACENT direct OSPF neighbor of the hub
+        ipt-server (Full, or the stable DROther↔DROther 2-Way state on a
+        broadcast backbone segment — accepted only together with the
+        reciprocal P2P LSAs below). The edge is alive.
       * ``False`` — *gw* is an off-backbone (edge tunnel) address but it is
         NOT a live edge's P2P interface-address (the edge's LSA aged out and
         the hub-side pod withdrew its reciprocal P2P link), or the reciprocal
@@ -374,8 +387,9 @@ def _edge_p2p_adjacency_healthy(
     Why this is correct where the rolled-back direct-neighbor-Full gate failed:
     the edge owning the gw is TWO OSPF hops from the hub and is never a direct
     neighbor, so ``_router_neighbor_is_full(edge)`` is structurally always
-    False. Here we instead check the hub-side leg (a real Full direct neighbor,
-    one hop) AND the reciprocal LSDB P2P link that only survives while the edge
+    False. Here we instead check the hub-side leg (a real adjacent direct
+    neighbor, one hop: Full, or stable 2-Way between DROthers on a broadcast
+    segment) AND the reciprocal LSDB P2P link that only survives while the edge
     is actually up. See
     docs/artifacts/2026-07-04-nexthop-monitor-edge-liveness-signal-analysis.md.
     """
@@ -390,8 +404,17 @@ def _edge_p2p_adjacency_healthy(
         # This is a DEAD edge, not a directly-attached gw.
         return False
     edge_router_id, hub_side_router_id = owner
-    # (1) the hub-side leg must be a Full DIRECT neighbor of this ipt-server.
-    if not _router_neighbor_is_full(hub_side_router_id, neighbor_data):
+    # (1) the hub-side leg must be an ADJACENT direct OSPF neighbor of this
+    #     ipt-server: Full, OR the stable 2-Way state two DROther routers
+    #     legitimately hold forever on a broadcast backbone segment when the
+    #     DR/BDR election leaves both this hub and the hub-side pod DROther.
+    #     2-Way alone proves only hellos, so it is accepted solely because
+    #     (2) below still requires BOTH reciprocal P2P LSAs, which prove
+    #     bidirectional reachability. Init/ExStart and friends never qualify.
+    hub_side_adjacent = _router_neighbor_state_is(
+        hub_side_router_id, neighbor_data, "Full"
+    ) or _router_neighbor_state_is(hub_side_router_id, neighbor_data, "2-Way")
+    if not hub_side_adjacent:
         return False
     # (2) the hub-side pod must still advertise the reciprocal P2P link to the
     #     edge (withdrawn on edge death), AND the edge must still advertise the
@@ -524,7 +547,9 @@ def _probe_gw_alive(gw: str) -> tuple[bool, Optional[str], Optional[str]]:
          * Otherwise, R is not directly adjacent. The only supported non-direct
            geo gw class is a hub↔edge P2P tunnel address: the owning EDGE
            router-id must hold a BIDIRECTIONAL P2P adjacency with a hub-side
-           router that is itself a Full DIRECT OSPF neighbor of this ipt-server
+           router that is itself an ADJACENT direct OSPF neighbor of this
+           ipt-server — Full, or the stable DROther↔DROther 2-Way state on a
+           broadcast backbone segment
            (``_edge_p2p_adjacency_healthy``). A dead edge keeps its /24 on-link
            via the still-up hub-side WireGuard interface, so RIB resolution
            alone false-alives; but the hub-side pod withdraws its reciprocal
@@ -564,9 +589,9 @@ def _probe_gw_alive(gw: str) -> tuple[bool, Optional[str], Optional[str]]:
         edge_healthy = _edge_p2p_adjacency_healthy(gw, router_lsdb, neighbor_data)
         if edge_healthy is not True:
             logger.debug(
-                "probe gw=%s: owner %s is not a Full direct OSPF neighbor and "
-                "has no healthy bidirectional P2P adjacency to a Full hub-side "
-                "neighbor", gw, router_id,
+                "probe gw=%s: owner %s is not an adjacent direct OSPF neighbor "
+                "and has no healthy bidirectional P2P adjacency to a "
+                "hub-side neighbor", gw, router_id,
             )
             return False, None, None
 
