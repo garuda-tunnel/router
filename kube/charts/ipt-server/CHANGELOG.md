@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/garuda-tunnel/router-internal/compare/v1.4.0...v1.4.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **ipt-server:** treat a 2-Way OSPF neighbor with reciprocal P2P LSAs as a healthy edge ([#81](https://github.com/garuda-tunnel/router-internal/issues/81)) ([9391794](https://github.com/garuda-tunnel/router-internal/commit/9391794bc2b448a2c972e84a788be6d7993c94eb))
+
 ## [1.4.0](https://github.com/garuda-tunnel/router-internal/compare/v1.3.3...v1.4.0) (2026-10-21)
 
 
