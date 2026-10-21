@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/garuda-tunnel/router-internal/compare/v1.3.3...v1.4.0) (2026-10-21)
+
+
+### Features
+
+* **ipt-server:** release route-protocol names and test gate ([#79](https://github.com/garuda-tunnel/router-internal/issues/79)) ([3f80b45](https://github.com/garuda-tunnel/router-internal/commit/3f80b4586a4efaac491312369a28ea97963f24eb))
+
 ## [1.3.3](https://github.com/garuda-tunnel/router-internal/compare/v1.3.2...v1.3.3) (2026-10-20)
 
 
