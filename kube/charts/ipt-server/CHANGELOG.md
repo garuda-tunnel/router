@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/garuda-tunnel/router-internal/compare/v1.4.1...v1.4.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ipt-server:** release the Helm timeout fix ([#84](https://github.com/garuda-tunnel/router-internal/issues/84)) ([#85](https://github.com/garuda-tunnel/router-internal/issues/85)) ([1b50a88](https://github.com/garuda-tunnel/router-internal/commit/1b50a88c32ae02805d497acb617456b87e2c1b97))
+
 ## [1.4.1](https://github.com/garuda-tunnel/router-internal/compare/v1.4.0...v1.4.1) (2026-10-21)
 
 
