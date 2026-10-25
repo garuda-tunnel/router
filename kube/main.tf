@@ -40,6 +40,9 @@ resource "helm_release" "ipt_server" {
   chart      = "ipt-server"
   version    = var.chart_version
 
+  # Cold image pulls on a fresh node exceed Helm's 300 s default.
+  timeout = 600
+
   # No-op for the OCI path (dependency is vendored in the published tgz);
   # kept so the local-path dev/hotfix escape hatch still resolves frr-sidecar.
   dependency_update = true

@@ -38,6 +38,10 @@ run "chart_resolves_from_oci" {
     condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", helm_release.ipt_server.version))
     error_message = "helm_release.version must be an exact semver from var.chart_version"
   }
+  assert {
+    condition     = helm_release.ipt_server.timeout == 600
+    error_message = "helm_release.timeout must leave room for cold image pulls"
+  }
 }
 
 run "values_include_routes_and_python_pbr_interfaces" {
