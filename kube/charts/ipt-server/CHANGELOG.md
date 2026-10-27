@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.4](https://github.com/garuda-tunnel/router-internal/compare/v1.4.3...v1.4.4) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ipt-server:** re-resolve alive member nexthops on drift ([#90](https://github.com/garuda-tunnel/router-internal/issues/90)) ([#91](https://github.com/garuda-tunnel/router-internal/issues/91)) ([2a39b40](https://github.com/garuda-tunnel/router-internal/commit/2a39b40d9915c3205281f17e255e82af10332462))
+
 ## [1.4.3](https://github.com/garuda-tunnel/router-internal/compare/v1.4.2...v1.4.3) (2026-10-27)
 
 
