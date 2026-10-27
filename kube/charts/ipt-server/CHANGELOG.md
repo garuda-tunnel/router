@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/garuda-tunnel/router-internal/compare/v1.4.2...v1.4.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ipt-server:** release the border-pin fix ([#87](https://github.com/garuda-tunnel/router-internal/issues/87)) ([#88](https://github.com/garuda-tunnel/router-internal/issues/88)) ([9516a73](https://github.com/garuda-tunnel/router-internal/commit/9516a73ddf96a937d9564e9e8ac143517f049c8f))
+
 ## [1.4.2](https://github.com/garuda-tunnel/router-internal/compare/v1.4.1...v1.4.2) (2026-10-25)
 
 
