@@ -648,12 +648,15 @@ def _tick(
     active_member: dict,
     consecutive_failures: dict,
     first_tick: bool,
+    member_last_applied: Optional[dict] = None,
 ) -> None:
     """Execute one monitor tick: probe liveness, reconcile nexthop state.
 
     On first_tick, seeds state dicts without issuing any nexthop.replace_*
     calls. On subsequent ticks, detects changes and replaces member or group
-    nexthop objects as needed.
+    nexthop objects as needed. An alive gw member whose freshly probed
+    (via, dev) differs from the last applied value is re-resolved even
+    though its liveness did not change (#90).
 
     Args:
         nhg_registry: NhgDescriptor -> group_nhid mapping from Router.
@@ -662,7 +665,11 @@ def _tick(
         active_member: NhgDescriptor -> active (gw, dev) key (mutated in-place).
         consecutive_failures: gw str -> consecutive probe failure count (mutated).
         first_tick: if True, seed state without issuing any replace calls.
+        member_last_applied: member_nhid -> (via, dev) last written to the
+            kernel for that nexthop (mutated in-place); tracks drift.
     """
+    if member_last_applied is None:
+        member_last_applied = {}
     # The backbone interface (and its address) may appear after process
     # start, so re-derive the backbone subnets on every tick (#65).
     _refresh_backbone_subnets()
@@ -731,6 +738,7 @@ def _tick(
                 if member.gw is not None:
                     resolved_gw, resolved_dev = probe_results[key]
                     nexthop.replace_nexthop(nhid, via=resolved_gw, dev=resolved_dev)
+                    member_last_applied[nhid] = (resolved_gw, resolved_dev)
                     logger.info(
                         "first_tick reconcile gw=%s nhid=%d via=%s dev=%s",
                         member.gw,
@@ -772,6 +780,34 @@ def _tick(
             is_alive = new_alive.get(key, False)
 
             if was_alive == is_alive:
+                # Liveness unchanged, but an alive gw member must still be
+                # re-resolved: the first tick may have seeded the kernel from
+                # a pre-convergence probe (hub reboot: the border /32 still
+                # routed via the default's wg pod), and nothing else would
+                # ever correct it (#90). No record means this process never
+                # wrote the nhid (first_tick / dead->alive own that).
+                if is_alive and member.gw is not None:
+                    resolved_gw, resolved_dev = probe_results[key]
+                    if resolved_gw and resolved_dev:
+                        nhid = member_nhids[key]
+                        applied = member_last_applied.get(nhid)
+                        if applied is not None and applied != (
+                            resolved_gw,
+                            resolved_dev,
+                        ):
+                            nexthop.replace_nexthop(
+                                nhid, via=resolved_gw, dev=resolved_dev
+                            )
+                            logger.info(
+                                "nexthop drift gw=%s nhid=%d "
+                                "old_via=%s new_via=%s dev=%s",
+                                member.gw,
+                                nhid,
+                                applied[0],
+                                resolved_gw,
+                                resolved_dev,
+                            )
+                            member_last_applied[nhid] = (resolved_gw, resolved_dev)
                 continue  # no change
 
             if not is_alive:
@@ -787,6 +823,7 @@ def _tick(
                 if member.gw is not None:
                     resolved_gw, resolved_dev = probe_results[key]
                     nexthop.replace_nexthop(nhid, via=resolved_gw, dev=resolved_dev)
+                    member_last_applied[nhid] = (resolved_gw, resolved_dev)
                     logger.info(
                         "Member gw=%s recovered, replaced nhid=%d via=%s dev=%s",
                         member.gw,
@@ -844,6 +881,8 @@ async def monitor_nexthops(
     member_alive: dict[tuple, bool] = {}
     active_member: dict[NhgDescriptor, tuple] = {}
     consecutive_failures: dict[str, int] = {}
+    # member_nhid -> (via, dev) last written to the kernel, for drift (#90)
+    member_last_applied: dict[int, tuple[str, str]] = {}
     # `first_tick` must survive across ticks; a list cell keeps it mutable
     # inside the tick closure without a `nonlocal` on a reassigned name.
     first_tick = [True]
@@ -861,6 +900,7 @@ async def monitor_nexthops(
                 active_member,
                 consecutive_failures,
                 first_tick[0],
+                member_last_applied,
             )
         finally:
             # Advance out of first_tick only once we have actually run a tick

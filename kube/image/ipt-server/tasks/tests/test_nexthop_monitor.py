@@ -1403,6 +1403,166 @@ class TestTickIteratesEveryMemberEveryTick:
 
 
 # ---------------------------------------------------------------------------
+# #90 nexthop drift: a member that STAYS alive must still be re-resolved.
+# The first tick may seed the kernel from a pre-convergence probe (hub
+# reboot: the border /32 still routed via the default route's wg pod); the
+# member never transitions liveness, so only comparing the fresh (via, dev)
+# against the last applied value can ever correct the kernel.
+# ---------------------------------------------------------------------------
+
+
+class TestAliveMemberNexthopDrift:
+    """Alive gw members are re-resolved every tick and replaced on drift."""
+
+    GW = "10.130.31.50"  # border router-id gw (live incident, #90)
+    KEY = ("10.130.31.50", None)
+    NHID = 2
+
+    def _state(self):
+        from types import SimpleNamespace
+
+        desc = _make_desc({"gw": self.GW})
+        return SimpleNamespace(
+            registry={desc: 4},
+            nhids={self.KEY: self.NHID},
+            alive={},
+            active={},
+            failures={},
+            last_applied={},
+        )
+
+    def test_probe_drift_on_later_tick_replaces_nexthop(self):
+        """Tick 1 probes the border gw alive via 172.28.0.6 (default-route
+        via, wg-usa pod); tick 2 probes it via 172.28.0.3 (OSPF converged).
+        The nexthop must be replaced with via 172.28.0.3 on tick 2."""
+        s = self._state()
+        via = {"v": "172.28.0.6"}
+        replaced: list = []
+
+        with (
+            patch(
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
+                side_effect=lambda gw: (True, via["v"], "backbone"),
+            ),
+            patch(
+                "nexthop.replace_nexthop",
+                side_effect=lambda nhid, via, dev: replaced.append(
+                    (nhid, via, dev)
+                ),
+            ),
+            patch("nexthop.replace_group", MagicMock()),
+            patch("nexthop.replace_nexthop_blackhole", MagicMock()),
+        ):
+            _tick(
+                s.registry,
+                s.nhids,
+                s.alive,
+                s.active,
+                s.failures,
+                first_tick=True,
+                member_last_applied=s.last_applied,
+            )
+            via["v"] = "172.28.0.3"  # OSPF delivered the border /32
+            _tick(
+                s.registry,
+                s.nhids,
+                s.alive,
+                s.active,
+                s.failures,
+                first_tick=False,
+                member_last_applied=s.last_applied,
+            )
+
+        assert (self.NHID, "172.28.0.3", "backbone") in replaced, (
+            "an alive member whose probe via drifted was never re-resolved "
+            f"(the #90 first-tick race); replace_nexthop calls: {replaced}"
+        )
+
+    def test_unchanged_probe_on_later_tick_does_not_replace(self):
+        """An unchanged (via, dev) on tick 2 issues no extra kernel call."""
+        s = self._state()
+        mock_replace = MagicMock()
+        with (
+            patch(
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
+                return_value=(True, "172.28.0.6", "backbone"),
+            ),
+            patch("nexthop.replace_nexthop", mock_replace),
+            patch("nexthop.replace_group", MagicMock()),
+            patch("nexthop.replace_nexthop_blackhole", MagicMock()),
+        ):
+            _tick(
+                s.registry,
+                s.nhids,
+                s.alive,
+                s.active,
+                s.failures,
+                first_tick=True,
+                member_last_applied=s.last_applied,
+            )
+            _tick(
+                s.registry,
+                s.nhids,
+                s.alive,
+                s.active,
+                s.failures,
+                first_tick=False,
+                member_last_applied=s.last_applied,
+            )
+
+        # No churn: only the first-tick reconcile may write when unchanged.
+        mock_replace.assert_called_once()
+
+    def test_alive_to_dead_keeps_blackhole_path_no_drift_replace(self):
+        """Alive→dead on tick 2 keeps the existing dead behaviour (blackhole
+        at the failure threshold) and never fires the drift replace."""
+        s = self._state()
+        calls = {"n": 0}
+
+        def probe(gw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return (True, "172.28.0.6", "backbone")
+            return (False, None, None)
+
+        mock_replace = MagicMock()
+        mock_blackhole = MagicMock()
+        with (
+            patch(
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
+                side_effect=probe,
+            ),
+            patch("nexthop.replace_nexthop", mock_replace),
+            patch("nexthop.replace_group", MagicMock()),
+            patch("nexthop.replace_nexthop_blackhole", mock_blackhole),
+        ):
+            _tick(
+                s.registry,
+                s.nhids,
+                s.alive,
+                s.active,
+                s.failures,
+                first_tick=True,
+                member_last_applied=s.last_applied,
+            )
+            for _ in range(_GW_FAILURE_THRESHOLD):
+                _tick(
+                    s.registry,
+                    s.nhids,
+                    s.alive,
+                    s.active,
+                    s.failures,
+                    first_tick=False,
+                    member_last_applied=s.last_applied,
+                )
+
+        mock_blackhole.assert_called_once_with(self.NHID)
+        # The dead path must not also issue a drift replace; only the
+        # first-tick reconcile may have written.
+        mock_replace.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # issue #37 rework: HUB-AND-SPOKE edge-liveness gate.
 #
 # The gw-owning EDGE router-id (e.g. de 10.130.30.33 for gw 10.9.21.2) is TWO
