@@ -604,7 +604,7 @@ class TestDnsBackendMonitorLoop(unittest.TestCase):
         the reconcile function off the loop thread."""
         import time
 
-        from tasks.dns_backend_monitor import monitor_dns_backend
+        from ipt_server.tasks.dns_backend_monitor import monitor_dns_backend
 
         reconciles = []
         stop_gate = threading_event = __import__("threading").Event()
@@ -620,7 +620,7 @@ class TestDnsBackendMonitorLoop(unittest.TestCase):
                 patch.object(
                     ipt_main, "reconcile_dns_backend", side_effect=fake_reconcile
                 ),
-                patch("tasks.dns_backend_monitor._INTERVAL_SECONDS", 0.001),
+                patch("ipt_server.tasks.dns_backend_monitor._INTERVAL_SECONDS", 0.001),
             ):
                 task = asyncio.create_task(monitor_dns_backend(stop))
                 await asyncio.to_thread(threading_event.wait, 5.0)

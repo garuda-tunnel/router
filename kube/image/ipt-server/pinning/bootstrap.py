@@ -83,7 +83,7 @@ async def setup_pinning(
 async def _liveness_loop(reconciler, catalog, interfaces_view, stop_event):
     """Probe each egress periodically and reconcile per-egress liveness.
 
-    probe_egress reaches into tasks.nexthop_monitor._vtysh, which
+    probe_egress reaches into ipt_server.tasks.nexthop_monitor._vtysh, which
     makes a blocking urllib.request.urlopen call against the FRR vty
     bridge with a 5s timeout.  Calling it directly from this
     coroutine would freeze the asyncio event loop for up to 5s x N

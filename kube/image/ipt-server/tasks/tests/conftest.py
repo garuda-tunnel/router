@@ -3,7 +3,7 @@
 The nexthop monitor derives the backbone subnets at runtime from the
 pod's PBR-interface IPv4 addresses (#65). `_tick` tests keep that
 derivation REAL by feeding a fake netlink boundary: the autouse fixture
-below patches `tasks.nexthop_monitor.IPRoute` with a stand-in whose
+below patches `ipt_server.tasks.nexthop_monitor.IPRoute` with a stand-in whose
 backbone interface runs 172.30.0.10/24 (the reference lab topology), and
 seeds the derived subnets for tests that do not run a tick. Tests that
 exercise the derivation itself patch the boundary with their own data.
@@ -14,7 +14,7 @@ import socket
 
 import pytest
 
-import tasks.nexthop_monitor as nexthop_monitor
+import ipt_server.tasks.nexthop_monitor as nexthop_monitor
 
 
 class _FakeAddr(dict):

@@ -1,14 +1,20 @@
 """Liveness probing for pinning egresses.
 
-Reuses the OSPF-based gateway prober from tasks.nexthop_monitor for
-gw-typed egresses. For dev-only egresses, alive iff the interface is
+Reuses the OSPF-based gateway prober from ipt_server.tasks.nexthop_monitor
+for gw-typed egresses. For dev-only egresses, alive iff the interface is
 currently registered in state.INTERFACES.
+
+The import must use the running app's module path (ipt_server.tasks.*, the
+namespace main.py extends onto the image root): importing the top-level
+tasks.nexthop_monitor would load a second module object whose
+_BACKBONE_SUBNETS is never refreshed, and every on-backbone gateway
+(border) would be judged dead — blackholing pinned clients (#83).
 """
 from __future__ import annotations
 
 from typing import Optional, Set, Tuple
 
-from tasks.nexthop_monitor import _probe_gw_alive
+from ipt_server.tasks.nexthop_monitor import _probe_gw_alive
 
 
 def probe_egress(

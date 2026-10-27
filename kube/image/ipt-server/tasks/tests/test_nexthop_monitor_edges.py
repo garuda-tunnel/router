@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import tasks.nexthop_monitor as nm
-from tasks.nexthop_monitor import (
+import ipt_server.tasks.nexthop_monitor as nm
+from ipt_server.tasks.nexthop_monitor import (
     _edge_p2p_adjacency_healthy,
     _find_edge_owning_p2p_address,
     _find_router_owning_address,
@@ -51,13 +51,13 @@ def _lsdb(links_by_router):
 class TestVtyshFailureModes:
     def test_network_error_returns_none(self):
         """A transport failure to the vty bridge returns None."""
-        with patch("tasks.nexthop_monitor.urllib.request.urlopen") as up:
+        with patch("ipt_server.tasks.nexthop_monitor.urllib.request.urlopen") as up:
             up.side_effect = urllib.error.URLError("conn refused")
             assert _vtysh("show ip ospf route json") is None
 
     def test_non_json_body_returns_none(self):
         """A non-JSON body returns None."""
-        with patch("tasks.nexthop_monitor.urllib.request.urlopen") as up:
+        with patch("ipt_server.tasks.nexthop_monitor.urllib.request.urlopen") as up:
             resp = MagicMock()
             resp.read.return_value = b"<html>not json</html>"
             up.return_value.__enter__.return_value = resp
@@ -65,7 +65,7 @@ class TestVtyshFailureModes:
 
     def test_non_dict_json_returns_none(self):
         """A JSON list (not object) returns None."""
-        with patch("tasks.nexthop_monitor.urllib.request.urlopen") as up:
+        with patch("ipt_server.tasks.nexthop_monitor.urllib.request.urlopen") as up:
             resp = MagicMock()
             resp.read.return_value = json.dumps([1, 2]).encode()
             up.return_value.__enter__.return_value = resp
@@ -73,7 +73,7 @@ class TestVtyshFailureModes:
 
     def test_valid_json_returns_dict(self):
         """A valid JSON object round-trips."""
-        with patch("tasks.nexthop_monitor.urllib.request.urlopen") as up:
+        with patch("ipt_server.tasks.nexthop_monitor.urllib.request.urlopen") as up:
             resp = MagicMock()
             resp.read.return_value = json.dumps({"a": 1}).encode()
             up.return_value.__enter__.return_value = resp
@@ -332,7 +332,7 @@ class TestProbeGwAliveFailurePaths:
         def fake_vtysh(command):
             return responses.get(command)
 
-        with patch("tasks.nexthop_monitor._vtysh", side_effect=fake_vtysh):
+        with patch("ipt_server.tasks.nexthop_monitor._vtysh", side_effect=fake_vtysh):
             return _probe_gw_alive(gw)
 
     def test_no_lsdb_returns_false(self):
@@ -445,7 +445,7 @@ class TestBackboneSubnetGuards:
 
     def test_refresh_skips_malformed_addresses(self):
         """A malformed interface address is skipped during derivation."""
-        with patch("tasks.nexthop_monitor._backbone_addr_prefixes") as prefixes:
+        with patch("ipt_server.tasks.nexthop_monitor._backbone_addr_prefixes") as prefixes:
             prefixes.return_value = [("garbage", 24), ("172.30.0.10", 24)]
             _refresh_backbone_subnets()
         assert nm._BACKBONE_SUBNETS == (ipaddress.ip_network("172.30.0.0/24"),)
@@ -453,7 +453,7 @@ class TestBackboneSubnetGuards:
     def test_refresh_failure_yields_empty_tuple(self):
         """A raising derivation leaves the subnets empty (fail closed)."""
         with patch(
-            "tasks.nexthop_monitor._backbone_addr_prefixes",
+            "ipt_server.tasks.nexthop_monitor._backbone_addr_prefixes",
             side_effect=RuntimeError("netlink gone"),
         ):
             _refresh_backbone_subnets()
@@ -486,8 +486,8 @@ class TestTickFailureThresholds:
         dev_key = (None, "wg-0")
         member_alive = {gw_key: True, dev_key: True}
         with (
-            patch("tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)),
-            patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
             patch("nexthop.replace_nexthop_blackhole"),
             patch("nexthop.replace_group"),
         ):
@@ -508,11 +508,11 @@ class TestTickFailureThresholds:
         dev_key = (None, "wg-0")
         member_alive = {gw_key: True, dev_key: True}
         with (
-            patch("tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)),
-            patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
             patch("nexthop.replace_nexthop_blackhole") as blackhole,
             patch("nexthop.replace_group"),
-            patch("tasks.nexthop_monitor._refresh_backbone_subnets"),
+            patch("ipt_server.tasks.nexthop_monitor._refresh_backbone_subnets"),
         ):
             _tick(
                 {desc: 12},
@@ -533,10 +533,10 @@ class TestTickFailureThresholds:
         member_alive = {}
         with (
             patch(
-                "tasks.nexthop_monitor._probe_gw_alive",
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
                 return_value=(True, "172.30.0.5", "wg-0"),
             ),
-            patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
             patch("nexthop.replace_nexthop") as replace_nh,
             patch("nexthop.replace_device") as replace_dev,
             patch("nexthop.replace_group"),
@@ -559,8 +559,8 @@ class TestTickFailureThresholds:
         dev_key = (None, "wg-0")
         member_alive = {gw_key: False, dev_key: False}
         with (
-            patch("tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)),
-            patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
             patch("nexthop.replace_nexthop_blackhole"),
             patch("nexthop.replace_device") as replace_dev,
             patch("nexthop.replace_group"),
@@ -598,12 +598,12 @@ class TestMonitorNexthopsLoop:
 
             loop_ref[0] = asyncio.get_running_loop()
             trip = _StartTripHandler()
-            trip_logger = logging.getLogger("tasks.nexthop_monitor")
+            trip_logger = logging.getLogger("ipt_server.tasks.nexthop_monitor")
             saved_level = trip_logger.level
             trip_logger.setLevel(logging.INFO)  # INFO is filtered by default
             trip_logger.addHandler(trip)
             try:
-                with patch("tasks.nexthop_monitor._tick") as tick:
+                with patch("ipt_server.tasks.nexthop_monitor._tick") as tick:
                     task = asyncio.create_task(nm.monitor_nexthops({}, {}, stop))
                     # Checkpoint: the monitor loop has provably started
                     # (observed on its loop-entry log record)...
@@ -627,7 +627,7 @@ class TestLsaHasP2PLinkTo:
 
     def test_malformed_shapes_return_false(self):
         """Malformed payloads degrade to False."""
-        from tasks.nexthop_monitor import _lsa_has_p2p_link_to
+        from ipt_server.tasks.nexthop_monitor import _lsa_has_p2p_link_to
 
         assert _lsa_has_p2p_link_to("r", "n", "junk") is False
         bad_areas = {"routerLinkStates": {"areas": "junk"}}
@@ -635,7 +635,7 @@ class TestLsaHasP2PLinkTo:
 
     def test_matching_link_returns_true(self):
         """A P2P link to the neighbor router is found."""
-        from tasks.nexthop_monitor import _lsa_has_p2p_link_to
+        from ipt_server.tasks.nexthop_monitor import _lsa_has_p2p_link_to
 
         lsdb = self._lsdb(
             {"1": {"linkType": "another Router (p2p)", "neighborRouterId": "10.130.30.20"}}
@@ -645,7 +645,7 @@ class TestLsaHasP2PLinkTo:
     def test_guards_skip_junk_entries(self):
         """Junk areas/LSAs/links and non-matching entries never crash and
         never match."""
-        from tasks.nexthop_monitor import _lsa_has_p2p_link_to
+        from ipt_server.tasks.nexthop_monitor import _lsa_has_p2p_link_to
 
         lsdb = {
             "routerLinkStates": {
@@ -667,7 +667,7 @@ class TestLsaHasP2PLinkTo:
 
     def test_neighbor_mismatch_returns_false(self):
         """A P2P link to a different neighbor does not match."""
-        from tasks.nexthop_monitor import _lsa_has_p2p_link_to
+        from ipt_server.tasks.nexthop_monitor import _lsa_has_p2p_link_to
 
         lsdb = self._lsdb(
             {"1": {"linkType": "another Router (p2p)", "neighborRouterId": "10.130.30.99"}}
@@ -687,7 +687,7 @@ class TestMalformedRouterLinkStates:
         gw = "10.9.19.2"
         assert _find_edge_owning_p2p_address(gw, {"routerLinkStates": "junk"}) is None
         assert _find_router_owning_address(gw, {"routerLinkStates": "junk"}) is None
-        from tasks.nexthop_monitor import _lsa_has_p2p_link_to
+        from ipt_server.tasks.nexthop_monitor import _lsa_has_p2p_link_to
 
         assert _lsa_has_p2p_link_to("r", "n", {"routerLinkStates": "junk"}) is False
 

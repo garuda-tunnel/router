@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock, call
 import pytest
 
 from Config import NhgDescriptor, RouteMember
-from tasks.nexthop_monitor import _probe_gw_alive, _tick, _GW_FAILURE_THRESHOLD
+from ipt_server.tasks.nexthop_monitor import _probe_gw_alive, _tick, _GW_FAILURE_THRESHOLD
 
 
 def _make_desc(*members):
@@ -65,10 +65,10 @@ def test_monitor_ospf_alive_keeps_primary():
 
     with (
         patch(
-            "tasks.nexthop_monitor._probe_gw_alive",
+            "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
             return_value=(True, "172.30.0.5", "backbone"),
         ),
-        patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+        patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
         patch("nexthop.replace_nexthop_blackhole", mock_blackhole),
         patch("nexthop.replace_nexthop", mock_replace_nexthop),
         patch("nexthop.replace_group", mock_replace_group),
@@ -122,9 +122,9 @@ def test_monitor_ospf_dead_switches_to_fallback():
 
     with (
         patch(
-            "tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)
+            "ipt_server.tasks.nexthop_monitor._probe_gw_alive", return_value=(False, None, None)
         ),
-        patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+        patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
         patch("nexthop.replace_nexthop_blackhole", mock_blackhole),
         patch("nexthop.replace_group", mock_replace_group),
     ):
@@ -177,10 +177,10 @@ def test_monitor_ospf_recovery_switches_to_primary():
 
     with (
         patch(
-            "tasks.nexthop_monitor._probe_gw_alive",
+            "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
             return_value=(True, "172.30.0.5", "backbone"),
         ),
-        patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+        patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
         patch("nexthop.replace_nexthop", mock_replace_nexthop),
         patch("nexthop.replace_group", mock_replace_group),
     ):
@@ -237,10 +237,10 @@ def test_monitor_vtysh_transient_failure_no_change():
     for _ in range(2):
         with (
             patch(
-                "tasks.nexthop_monitor._probe_gw_alive",
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
                 return_value=(False, None, None),
             ),
-            patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
             patch("nexthop.replace_nexthop_blackhole", mock_blackhole),
             patch("nexthop.replace_group", mock_replace_group),
         ):
@@ -296,10 +296,10 @@ def test_monitor_vtysh_3_failures_failclosed():
     for i in range(_GW_FAILURE_THRESHOLD):
         with (
             patch(
-                "tasks.nexthop_monitor._probe_gw_alive",
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
                 return_value=(False, None, None),
             ),
-            patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+            patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
             patch(
                 "nexthop.replace_nexthop_blackhole", side_effect=blackhole_calls.append
             ),
@@ -359,10 +359,10 @@ def test_monitor_dev_gateway_change_updates_nexthop():
 
     with (
         patch(
-            "tasks.nexthop_monitor._probe_gw_alive",
+            "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
             return_value=(True, "172.30.0.5", "backbone"),
         ),
-        patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(False, None)),
+        patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(False, None)),
         patch("nexthop.replace_nexthop_blackhole", mock_blackhole),
         patch("nexthop.replace_nexthop", mock_replace_nexthop),
         patch("nexthop.replace_group", mock_replace_group),
@@ -424,10 +424,10 @@ def test_monitor_stable_state_noop():
 
     with (
         patch(
-            "tasks.nexthop_monitor._probe_gw_alive",
+            "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
             return_value=(True, "172.30.0.5", "backbone"),
         ),
-        patch("tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
+        patch("ipt_server.tasks.nexthop_monitor._probe_dev_alive", return_value=(True, None)),
         patch("nexthop.replace_nexthop_blackhole", mock_blackhole),
         patch("nexthop.replace_nexthop", mock_replace_nexthop),
         patch("nexthop.replace_device", mock_replace_device),
@@ -452,7 +452,7 @@ def test_monitor_stable_state_noop():
 # _find_router_owning_address tests
 # ---------------------------------------------------------------------------
 
-from tasks.nexthop_monitor import _find_router_owning_address
+from ipt_server.tasks.nexthop_monitor import _find_router_owning_address
 from tasks.tests.fixtures.ospf_lsdb_direct import (
     ROUTER_LSDB_TWO_OUTERS,
     ROUTER_LSDB_DE_DEAD,
@@ -549,7 +549,7 @@ class TestFindRouterOwningAddress:
 # _router_originates_default tests
 # ---------------------------------------------------------------------------
 
-from tasks.nexthop_monitor import _router_originates_default
+from ipt_server.tasks.nexthop_monitor import _router_originates_default
 from tasks.tests.fixtures.ospf_lsdb_direct import (
     EXTERNAL_LSDB_BOTH_DEFAULTS,
     EXTERNAL_LSDB_ONLY_PT,
@@ -605,7 +605,7 @@ class TestRouterOriginatesDefault:
 # _resolve_router_nexthop tests
 # ---------------------------------------------------------------------------
 
-from tasks.nexthop_monitor import _resolve_router_nexthop
+from ipt_server.tasks.nexthop_monitor import _resolve_router_nexthop
 from tasks.tests.fixtures.ospf_lsdb_direct import (
     RIB_TWO_OUTERS,
     RIB_PT_GONE,
@@ -667,7 +667,7 @@ class TestProbeGwAlive:
             if "ospf route" in command:
                 return rib
             return None
-        return patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect)
+        return patch("ipt_server.tasks.nexthop_monitor._vtysh", side_effect=side_effect)
 
     def test_outer_pt_alive_when_both_advertise_default(self):
         """pt edge alive when both fixtures advertise it."""
@@ -782,7 +782,7 @@ class TestProbeGwAlive:
             if "database external" in command:
                 return EXTERNAL_LSDB_BOTH_DEFAULTS
             return None
-        with patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect):
+        with patch("ipt_server.tasks.nexthop_monitor._vtysh", side_effect=side_effect):
             alive, via, dev = _probe_gw_alive("10.9.21.2")
         assert alive is False
         assert (via, dev) == (None, None)
@@ -920,7 +920,7 @@ class TestProbeGwAlive:
 
     def test_vty_bridge_failure_returns_false(self):
         """A failing vty bridge probe returns not-alive instead of raising."""
-        with patch("tasks.nexthop_monitor._vtysh", return_value=None):
+        with patch("ipt_server.tasks.nexthop_monitor._vtysh", return_value=None):
             alive, via, dev = _probe_gw_alive("10.9.19.2")
         assert alive is False
         assert (via, dev) == (None, None)
@@ -930,7 +930,7 @@ class TestProbeGwAlive:
 # Fix A: _resolve_direct_router_nexthop must return the OSPF-RIB nexthop
 # ---------------------------------------------------------------------------
 
-from tasks.nexthop_monitor import _resolve_direct_router_nexthop
+from ipt_server.tasks.nexthop_monitor import _resolve_direct_router_nexthop
 from tasks.tests.fixtures.ospf_edge_standalone import (
     EDGE_ROUTER_LSDB,
     EDGE_RIB,
@@ -1098,7 +1098,7 @@ class TestProbeGwAliveTunnelEdgeInstallable:
             if "database external" in command:
                 return {"asExternalLinkStates": []}
             return None
-        return patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect)
+        return patch("ipt_server.tasks.nexthop_monitor._vtysh", side_effect=side_effect)
 
     def test_usa_probe_returns_installable_backbone_nexthop(self):
         """A full usa probe returns an installable backbone nexthop (live-incident regression)."""
@@ -1110,9 +1110,9 @@ class TestProbeGwAliveTunnelEdgeInstallable:
 def test_probe_logs_branch_on_unknown_gw(caplog):
     """The unknown-gw branch of the probe emits a diagnostic line."""
     import logging as _l
-    with patch("tasks.nexthop_monitor._vtysh",
+    with patch("ipt_server.tasks.nexthop_monitor._vtysh",
                side_effect=lambda c: EDGE_ROUTER_LSDB if "database router" in c else EDGE_RIB):
-        with caplog.at_level(_l.DEBUG, logger="tasks.nexthop_monitor"):
+        with caplog.at_level(_l.DEBUG, logger="ipt_server.tasks.nexthop_monitor"):
             alive, _, _ = _probe_gw_alive("192.0.2.99")  # not owned by any router
     assert alive is False
     assert any("no owning router" in r.message.lower() or "192.0.2.99" in r.message
@@ -1131,7 +1131,7 @@ async def test_monitor_nexthops_loop_survives_a_tick_that_raises():
     from types import SimpleNamespace
 
     from ipt_server import state
-    from tasks.nexthop_monitor import monitor_nexthops
+    from ipt_server.tasks.nexthop_monitor import monitor_nexthops
 
     calls = {"n": 0}
     stop = asyncio.Event()
@@ -1149,8 +1149,8 @@ async def test_monitor_nexthops_loop_survives_a_tick_that_raises():
 
     with (
         patch.object(state, "ROUTER", fake_router),
-        patch("tasks.nexthop_monitor._tick", side_effect=fake_tick),
-        patch("tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
+        patch("ipt_server.tasks.nexthop_monitor._tick", side_effect=fake_tick),
+        patch("ipt_server.tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
     ):
         await asyncio.wait_for(
             monitor_nexthops({}, {}, stop),
@@ -1187,7 +1187,7 @@ async def test_monitor_nexthop_loop_survives_a_hanging_tick():
     from types import SimpleNamespace
 
     from ipt_server import state
-    from tasks.nexthop_monitor import monitor_nexthops
+    from ipt_server.tasks.nexthop_monitor import monitor_nexthops
 
     calls = {"n": 0}
     stop = asyncio.Event()
@@ -1203,7 +1203,7 @@ async def test_monitor_nexthop_loop_survives_a_hanging_tick():
                     loop_ref[0].call_soon_threadsafe(timeout_logged.set)
 
     trip = _TimeoutTripHandler()
-    logger_target = logging.getLogger("tasks.nexthop_monitor")
+    logger_target = logging.getLogger("ipt_server.tasks.nexthop_monitor")
     logger_target.addHandler(trip)
 
     def fake_tick(*_args, **_kwargs):
@@ -1227,9 +1227,9 @@ async def test_monitor_nexthop_loop_survives_a_hanging_tick():
     try:
         with (
             patch.object(state, "ROUTER", fake_router),
-            patch("tasks.nexthop_monitor._tick", side_effect=fake_tick),
-            patch("tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
-            patch("tasks.nexthop_monitor._TICK_TIMEOUT_SECONDS", 0.05),
+            patch("ipt_server.tasks.nexthop_monitor._tick", side_effect=fake_tick),
+            patch("ipt_server.tasks.nexthop_monitor._TICK_INTERVAL_SECONDS", 0),
+            patch("ipt_server.tasks.nexthop_monitor._TICK_TIMEOUT_SECONDS", 0.05),
         ):
             loop_ref[0] = asyncio.get_running_loop()
             await asyncio.wait_for(
@@ -1282,7 +1282,7 @@ class TestTickIteratesEveryMemberEveryTick:
             return (False, None, None)
 
         with (
-            patch("tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
+            patch("ipt_server.tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
             patch("nexthop.replace_nexthop", MagicMock()),
             patch("nexthop.replace_group", MagicMock()),
             patch("nexthop.replace_nexthop_blackhole", MagicMock()),
@@ -1336,7 +1336,7 @@ class TestTickIteratesEveryMemberEveryTick:
             installed.append((nhid, via))
 
         with (
-            patch("tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
+            patch("ipt_server.tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
             patch("nexthop.replace_nexthop", side_effect=rec_nexthop),
             patch("nexthop.replace_group", MagicMock()),
             patch("nexthop.replace_nexthop_blackhole", MagicMock()),
@@ -1385,11 +1385,11 @@ class TestTickIteratesEveryMemberEveryTick:
             return (True, "172.30.0.116", "backbone")
 
         with (
-            patch("tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
+            patch("ipt_server.tasks.nexthop_monitor._probe_gw_alive", side_effect=probe),
             patch("nexthop.replace_nexthop", MagicMock()),
             patch("nexthop.replace_group", MagicMock()),
             patch("nexthop.replace_nexthop_blackhole", MagicMock()),
-            caplog.at_level(_l.INFO, logger="tasks.nexthop_monitor"),
+            caplog.at_level(_l.INFO, logger="ipt_server.tasks.nexthop_monitor"),
         ):
             _tick(nhg_registry, member_nhids, {}, {}, {}, first_tick=True)
 
@@ -1446,7 +1446,7 @@ class TestHubSpokeEdgeLivenessGate:
                 return rib
             return None
 
-        return patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect)
+        return patch("ipt_server.tasks.nexthop_monitor._vtysh", side_effect=side_effect)
 
     @staticmethod
     def _without_neighbor(neighbors, router_id):
@@ -1487,7 +1487,7 @@ class TestHubSpokeEdgeLivenessGate:
         hops away). This test asserts the edge is ALIVE *and* independently
         demonstrates that the old gate would have returned False for it.
         """
-        from tasks.nexthop_monitor import _router_neighbor_is_full
+        from ipt_server.tasks.nexthop_monitor import _router_neighbor_is_full
 
         owner = "10.130.30.33"  # de-edge, the gw owner
         # The OLD gate (regression): direct-neighbor-Full on the owner.
@@ -1549,7 +1549,7 @@ class TestHubSpokeEdgeLivenessGate:
         trusted `_resolve_direct_router_nexthop` alone (no adjacency check)
         would keep it alive. This is what makes the previous behaviour wrong.
         """
-        from tasks.nexthop_monitor import _resolve_direct_router_nexthop
+        from ipt_server.tasks.nexthop_monitor import _resolve_direct_router_nexthop
 
         # The hub-side pod 10.130.30.30 still advertises 10.9.21.0/24 on-link;
         # resolving *that* owner against the dead RIB still yields a nexthop.
@@ -1612,7 +1612,7 @@ class TestHubSpokeEdgeLivenessGate:
         10.130.30.50 through the P2P-edge path returns dead because no P2P link
         owns that router-id. The correct first branch is direct-neighbor-Full on
         owner 10.130.30.50, so border remains ALIVE and is not pruned."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             "10.130.30.50", HS_ROUTER_LSDB_ALIVE, HS_NEIGHBORS_ALIVE
@@ -1650,7 +1650,7 @@ class TestEdgeReciprocalP2pAdjacency:
 
     def test_de_edge_alive_reciprocal_and_hub_full(self):
         """Reciprocal P2P adjacency plus Full hub neighbor marks the de edge alive."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             "10.9.21.2", HS_ROUTER_LSDB_ALIVE, HS_NEIGHBORS_ALIVE
@@ -1658,7 +1658,7 @@ class TestEdgeReciprocalP2pAdjacency:
 
     def test_pt_edge_alive_reciprocal_and_hub_full(self):
         """Reciprocal P2P adjacency plus Full hub neighbor marks the pt edge alive."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             "10.9.19.2", HS_ROUTER_LSDB_ALIVE, HS_NEIGHBORS_ALIVE
@@ -1666,7 +1666,7 @@ class TestEdgeReciprocalP2pAdjacency:
 
     def test_de_edge_dead_reciprocal_link_withdrawn(self):
         """A withdrawn reciprocal link marks the de edge dead."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         # de-hub pod .30 withdrew its P2P link to .33 and .33's LSA is gone ->
         # no reciprocal adjacency -> not healthy.
@@ -1678,7 +1678,7 @@ class TestEdgeReciprocalP2pAdjacency:
         """A backbone gw (border's 172.30.0.15) is directly-attached, one hop
         away -> None so the caller takes the direct-neighbor path (NOT edge
         gating)."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             "172.30.0.15", HS_ROUTER_LSDB_ALIVE, HS_NEIGHBORS_ALIVE
@@ -1690,7 +1690,7 @@ class TestEdgeReciprocalP2pAdjacency:
         /24 stub lingers) -> False, NOT None. This is what stops the dead edge
         from leaking into the directly-attached path via the stub fallback
         (issue #37)."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             "10.9.21.2", HS_ROUTER_LSDB_DE_DEAD, HS_NEIGHBORS_DE_DEAD
@@ -1700,7 +1700,7 @@ class TestEdgeReciprocalP2pAdjacency:
         """If the reciprocal P2P link exists in the LSDB but the hub-side pod is
         NOT a Full direct neighbor (hub-side leg itself broken), the edge is not
         reachable -> not healthy."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         neighbors_no_de_hub = {
             "neighbors": {
@@ -1788,7 +1788,7 @@ class TestEdgeTwoWayDrotherHubLeg:
         """2-Way/DROther hub-side pod plus both reciprocal P2P LSAs -> the
         live edge is healthy (DROther↔DROther is a stable adjacency state,
         not an outage)."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             self.PT_GW,
@@ -1800,7 +1800,7 @@ class TestEdgeTwoWayDrotherHubLeg:
         """2-Way alone proves only hellos: with either reciprocal P2P LSA
         missing (hub-side link withdrawn, or the edge LSA aged out) the edge
         is dead."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         two_way = self._neighbors_with_hub_pod_state("2-Way/DROther")
         assert _edge_p2p_adjacency_healthy(
@@ -1813,7 +1813,7 @@ class TestEdgeTwoWayDrotherHubLeg:
     def test_two_way_gate_rejects_init_and_exstart(self):
         """Init/ExStart hub-side states are forming/broken, not stable
         adjacency: the edge is dead regardless of the LSDB."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         for nbr_state in ("Init/DROther", "ExStart/DR"):
             assert _edge_p2p_adjacency_healthy(
@@ -1825,7 +1825,7 @@ class TestEdgeTwoWayDrotherHubLeg:
     def test_full_hub_leg_stays_healthy(self):
         """Unchanged behavior: a Full hub-side pod with both reciprocal P2P
         LSAs is healthy."""
-        from tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
+        from ipt_server.tasks.nexthop_monitor import _edge_p2p_adjacency_healthy
 
         assert _edge_p2p_adjacency_healthy(
             self.PT_GW,
@@ -1860,8 +1860,8 @@ import ipaddress
 
 from types import SimpleNamespace
 
-import tasks.nexthop_monitor as nm
-from tasks.nexthop_monitor import (
+import ipt_server.tasks.nexthop_monitor as nm
+from ipt_server.tasks.nexthop_monitor import (
     _is_on_backbone,
     _probe_gw_alive,
     _resolve_direct_router_nexthop,
@@ -1879,7 +1879,7 @@ class TestBackboneSubnetFromInterface:
         with (
             patch("ipt_server.state.CONFIG", cfg),
             patch(
-                "tasks.nexthop_monitor._backbone_addr_prefixes",
+                "ipt_server.tasks.nexthop_monitor._backbone_addr_prefixes",
                 return_value=list(prefixes),
             ),
         ):
@@ -1944,7 +1944,7 @@ class TestBackboneSubnetFromInterface:
                 return rib
             return None
 
-        with patch("tasks.nexthop_monitor._vtysh", side_effect=side_effect):
+        with patch("ipt_server.tasks.nexthop_monitor._vtysh", side_effect=side_effect):
             alive, via, dev = _probe_gw_alive("192.0.2.3")
 
         assert alive is True, (
@@ -1995,9 +1995,9 @@ class TestBackboneSubnetFromInterface:
         reader = MagicMock(return_value=[("192.0.2.10", 26)])
         desc = _make_desc({"gw": "10.9.19.2"})
         with (
-            patch("tasks.nexthop_monitor._backbone_addr_prefixes", reader),
+            patch("ipt_server.tasks.nexthop_monitor._backbone_addr_prefixes", reader),
             patch(
-                "tasks.nexthop_monitor._probe_gw_alive",
+                "ipt_server.tasks.nexthop_monitor._probe_gw_alive",
                 return_value=(False, None, None),
             ),
             patch("nexthop.replace_nexthop_blackhole", MagicMock()),
@@ -2020,7 +2020,7 @@ class TestBackboneSubnetRefreshLogging:
         with (
             patch("ipt_server.state.CONFIG", cfg),
             patch(
-                "tasks.nexthop_monitor._backbone_addr_prefixes",
+                "ipt_server.tasks.nexthop_monitor._backbone_addr_prefixes",
                 return_value=list(prefixes),
             ),
         ):
@@ -2030,7 +2030,7 @@ class TestBackboneSubnetRefreshLogging:
         cfg = SimpleNamespace(interfaces=["backbone"])
         with (
             patch("ipt_server.state.CONFIG", cfg),
-            patch("tasks.nexthop_monitor._backbone_addr_prefixes", side_effect=exc),
+            patch("ipt_server.tasks.nexthop_monitor._backbone_addr_prefixes", side_effect=exc),
         ):
             nm._refresh_backbone_subnets()
 
@@ -2038,7 +2038,7 @@ class TestBackboneSubnetRefreshLogging:
         """Losing all backbone subnets warns once, not per tick."""
         import logging as _l
 
-        with caplog.at_level(_l.WARNING, logger="tasks.nexthop_monitor"):
+        with caplog.at_level(_l.WARNING, logger="ipt_server.tasks.nexthop_monitor"):
             self._refresh([])  # transition to empty -> one WARNING
             self._refresh([])  # still empty -> no repeat
             warnings = [r for r in caplog.records if r.levelno == _l.WARNING]
@@ -2054,7 +2054,7 @@ class TestBackboneSubnetRefreshLogging:
         """A derivation failure warns once and keeps the previous subnets."""
         import logging as _l
 
-        with caplog.at_level(_l.WARNING, logger="tasks.nexthop_monitor"):
+        with caplog.at_level(_l.WARNING, logger="ipt_server.tasks.nexthop_monitor"):
             self._refresh_raises(RuntimeError("netlink down"))
             self._refresh_raises(RuntimeError("netlink down"))
         warnings = [r for r in caplog.records if r.levelno == _l.WARNING]
@@ -2064,7 +2064,7 @@ class TestBackboneSubnetRefreshLogging:
         """A subnet change logs once at INFO with the new set."""
         import logging as _l
 
-        with caplog.at_level(_l.INFO, logger="tasks.nexthop_monitor"):
+        with caplog.at_level(_l.INFO, logger="ipt_server.tasks.nexthop_monitor"):
             self._refresh([("192.0.2.10", 26)])
             self._refresh([("192.0.2.10", 26)])  # unchanged -> no repeat
             self._refresh([("172.30.0.9", 24)])  # change -> INFO again
@@ -2120,7 +2120,7 @@ class TestBackboneAddrPrefixReader:
         cfg = SimpleNamespace(interfaces=["backbone", "border"])
         with (
             patch("ipt_server.state.CONFIG", cfg),
-            patch("tasks.nexthop_monitor.IPRoute", return_value=fake),
+            patch("ipt_server.tasks.nexthop_monitor.IPRoute", return_value=fake),
         ):
             prefixes = nm._backbone_addr_prefixes()
         assert sorted(prefixes) == [("172.30.0.9", 24), ("192.0.2.10", 26)]
@@ -2130,7 +2130,7 @@ class TestBackboneAddrPrefixReader:
         fake = self._FakeIPRoute({"backbone": [("172.30.0.9", 24)]})
         with (
             patch("ipt_server.state.CONFIG", None),
-            patch("tasks.nexthop_monitor.IPRoute", return_value=fake),
+            patch("ipt_server.tasks.nexthop_monitor.IPRoute", return_value=fake),
         ):
             prefixes = nm._backbone_addr_prefixes()
         assert prefixes == [("172.30.0.9", 24)]
@@ -2141,6 +2141,6 @@ class TestBackboneAddrPrefixReader:
         cfg = SimpleNamespace(interfaces=["backbone"])
         with (
             patch("ipt_server.state.CONFIG", cfg),
-            patch("tasks.nexthop_monitor.IPRoute", return_value=fake),
+            patch("ipt_server.tasks.nexthop_monitor.IPRoute", return_value=fake),
         ):
             assert nm._backbone_addr_prefixes() == []
